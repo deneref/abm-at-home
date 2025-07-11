@@ -4,6 +4,7 @@ import networkx as nx
 import objc
 from Cocoa import NSObject, NSMakeRect, NSData
 from AppKit import NSView, NSImageView
+from AppKit import NSViewWidthSizable, NSViewHeightSizable
 import database
 import matplotlib
 matplotlib.use("Agg")
