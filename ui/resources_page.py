@@ -4,19 +4,20 @@ from AppKit import NSView, NSTextField, NSButton, NSScrollView, NSTableView, NST
 from AppKit import NSViewWidthSizable, NSViewHeightSizable, NSViewMaxYMargin
 import database
 
+
 class ResourcesPage(NSObject):
     def init(self):
         self = objc.super(ResourcesPage, self).init()
         if self is None:
             return None
-        # Контейнер содержимого страницы
         content_rect = NSMakeRect(0, 0, 1000, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
-        self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
-        # Таблица (в ScrollView) для списка ресурсов
+        self.view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = NSTableView.alloc().initWithFrame_(table_rect)
-        columns = [("id", 120), ("name", 120), ("cost_total", 120), ("unit", 120)]
+        columns = [("id", 120), ("name", 120),
+                   ("cost_total", 120), ("unit", 120)]
         for col_id, width in columns:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
@@ -29,9 +30,9 @@ class ResourcesPage(NSObject):
         scroll_view = NSScrollView.alloc().initWithFrame_(table_rect)
         scroll_view.setDocumentView_(self.tree)
         scroll_view.setHasVerticalScroller_(True)
-        scroll_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        scroll_view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
         self.view.addSubview_(scroll_view)
-        # Форма ввода внизу (добавление/редактирование ресурса)
         form_rect = NSMakeRect(0, 0, 1000, 30)
         form_view = NSView.alloc().initWithFrame_(form_rect)
         form_view.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
@@ -61,7 +62,6 @@ class ResourcesPage(NSObject):
         del_button.setAction_("delete:")
         form_view.addSubview_(del_button)
         self.view.addSubview_(form_view)
-        # Загрузка начальных данных
         self.refresh()
         return self
 
@@ -114,11 +114,21 @@ class ResourcesPage(NSObject):
         con = database.get_connection()
         cur = con.cursor()
         if self.tree.numberOfSelectedRows() > 0:
+            # Update existing resource (current period cost updated)
             row = self.tree.selectedRow()
             rid = self.rows[row][0]
-            cur.execute("UPDATE resources SET name=?, cost_total=?, unit=? WHERE id=?", (name, cost, unit, rid))
+            cur.execute(
+                "UPDATE resources SET name=?, cost_total=?, unit=? WHERE id=?", (name, cost, unit, rid))
+            cur.execute("UPDATE resource_costs SET cost=? WHERE resource_id=? AND period=?",
+                        (cost, rid, database.current_period))
         else:
-            cur.execute("INSERT INTO resources (name, cost_total, unit) VALUES (?,?,?)", (name, cost, unit))
+            # Insert new resource and add costs for all periods
+            cur.execute(
+                "INSERT INTO resources (name, cost_total, unit) VALUES (?, ?, ?)", (name, cost, unit))
+            rid = cur.lastrowid
+            # Populate resource_costs for all periods
+            cur.execute(
+                "INSERT INTO resource_costs(resource_id, period, cost) SELECT ?, period, ? FROM periods", (rid, cost))
         con.commit()
         con.close()
         self.refresh()
@@ -143,7 +153,8 @@ class ResourcesPage(NSObject):
         response = alert.runModal()
         if response == 1000:
             con = database.get_connection()
-            con.execute("DELETE FROM resources WHERE id=?", (rid,))
+            cur = con.cursor()
+            cur.execute("DELETE FROM resources WHERE id=?", (rid,))
             con.commit()
             con.close()
             self.refresh()
@@ -152,7 +163,13 @@ class ResourcesPage(NSObject):
     def refresh(self):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id, name, cost_total, unit FROM resources")
+        # Fetch resource data for current period costs
+        cur.execute("""SELECT r.id, r.name, 
+                              COALESCE(rc.cost, r.cost_total) AS cost_val, 
+                              r.unit 
+                       FROM resources r 
+                       LEFT JOIN resource_costs rc 
+                         ON r.id = rc.resource_id AND rc.period=?""", (database.current_period,))
         self.rows = cur.fetchall()
         con.close()
         self.tree.reloadData()

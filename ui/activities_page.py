@@ -1,8 +1,10 @@
 import objc
 from Cocoa import NSObject, NSMakeRect
-from AppKit import NSView, NSTextField, NSButton, NSScrollView, NSTableView, NSTableColumn, NSAlert
+from AppKit import NSView, NSTextField, NSButton, NSComboBox, NSAlert
 from AppKit import NSViewWidthSizable, NSViewHeightSizable, NSViewMaxYMargin
+from AppKit import NSSwitchButton  # for checkbox button type
 import database
+
 
 class ActivitiesPage(NSObject):
     def init(self):
@@ -11,12 +13,15 @@ class ActivitiesPage(NSObject):
             return None
         content_rect = NSMakeRect(0, 0, 1000, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
-        self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
         table_rect = NSMakeRect(0, 30, 1000, 590)
-        self.tree = NSTableView.alloc().initWithFrame_(table_rect)
+        self.tree = objc.lookUpClass(
+            "NSTableView").alloc().initWithFrame_(table_rect)
         columns = [("id", 120), ("name", 150), ("driver", 150)]
         for col_id, width in columns:
-            col = NSTableColumn.alloc().initWithIdentifier_(col_id)
+            col = objc.lookUpClass(
+                "NSTableColumn").alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
             col.headerCell().setStringValue_(col_id)
             self.tree.addTableColumn_(col)
@@ -24,10 +29,12 @@ class ActivitiesPage(NSObject):
         self.tree.setDataSource_(self)
         self.tree.setAllowsMultipleSelection_(False)
         self.tree.setUsesAlternatingRowBackgroundColors_(True)
-        scroll_view = NSScrollView.alloc().initWithFrame_(table_rect)
+        scroll_view = objc.lookUpClass(
+            "NSScrollView").alloc().initWithFrame_(table_rect)
         scroll_view.setDocumentView_(self.tree)
         scroll_view.setHasVerticalScroller_(True)
-        scroll_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        scroll_view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
         self.view.addSubview_(scroll_view)
         form_rect = NSMakeRect(0, 0, 1000, 30)
         form_view = NSView.alloc().initWithFrame_(form_rect)
@@ -40,14 +47,23 @@ class ActivitiesPage(NSObject):
         driver_label = NSTextField.labelWithString_("Driver")
         driver_label.setFrame_(NSMakeRect(220, 5, 50, 20))
         form_view.addSubview_(driver_label)
-        self.driver_field = NSTextField.alloc().initWithFrame_(NSMakeRect(275, 5, 150, 20))
-        form_view.addSubview_(self.driver_field)
-        add_button = NSButton.alloc().initWithFrame_(NSMakeRect(440, 0, 100, 30))
+        self.driver_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(275, 5, 150, 20))
+        self.driver_cb.setEditable_(False)
+        form_view.addSubview_(self.driver_cb)
+        # "Evenly" checkbox for even distribution
+        self.evenly_cb = NSButton.alloc().initWithFrame_(NSMakeRect(440, 5, 100, 20))
+        self.evenly_cb.setButtonType_(NSSwitchButton)
+        self.evenly_cb.setTitle_("Равномерно")
+        self.evenly_cb.setState_(0)
+        self.evenly_cb.setTarget_(self)
+        self.evenly_cb.setAction_("toggleEvenly:")
+        form_view.addSubview_(self.evenly_cb)
+        add_button = NSButton.alloc().initWithFrame_(NSMakeRect(550, 0, 100, 30))
         add_button.setTitle_("Add / Update")
         add_button.setTarget_(self)
         add_button.setAction_("save:")
         form_view.addSubview_(add_button)
-        del_button = NSButton.alloc().initWithFrame_(NSMakeRect(550, 0, 80, 30))
+        del_button = NSButton.alloc().initWithFrame_(NSMakeRect(660, 0, 80, 30))
         del_button.setTitle_("Delete")
         del_button.setTarget_(self)
         del_button.setAction_("delete:")
@@ -70,33 +86,66 @@ class ActivitiesPage(NSObject):
         return ""
 
     def tableViewSelectionDidChange_(self, notification):
+        # Fill form fields when selecting an activity
         if self.tree.numberOfSelectedRows() == 0:
             return
         row = self.tree.selectedRow()
         if row < 0 or row >= len(self.rows):
             return
         selected = self.rows[row]
+        # selected structure: (id, name, driver_name, evenly_flag)
         self.name_field.setStringValue_(selected[1])
-        self.driver_field.setStringValue_(selected[2])
+        if selected[3] == 1:  # evenly
+            self.evenly_cb.setState_(1)
+            self.driver_cb.setEnabled_(False)
+            self.driver_cb.setStringValue_("")
+        else:
+            self.evenly_cb.setState_(0)
+            self.driver_cb.setEnabled_(True)
+            self.driver_cb.setStringValue_(selected[2] or "")
+        # Note: we do not auto-select driver combo item here; just display name text
 
     def save_(self, sender):
         name = self.name_field.stringValue().strip()
-        driver = self.driver_field.stringValue().strip()
-        if not name or not driver:
+        driver_name = self.driver_cb.stringValue().strip()
+        evenly_flag = int(self.evenly_cb.state())
+        if not name or (not driver_name and evenly_flag == 0):
             alert = NSAlert.alloc().init()
             alert.setMessageText_("Error")
             alert.setInformativeText_("Fill all fields")
             alert.addButtonWithTitle_("OK")
             alert.runModal()
             return
+        # Determine driver_id for given driver name (unless evenly)
+        driver_id = None
+        if evenly_flag == 0:
+            # Find driver_id by name
+            con = database.get_connection()
+            cur = con.cursor()
+            cur.execute("SELECT id FROM drivers WHERE name=?", (driver_name,))
+            row = cur.fetchone()
+            driver_id = row[0] if row else None
+            con.close()
+            if driver_id is None:
+                # If driver not found (should not happen if selection made)
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_("Error")
+                alert.setInformativeText_("Invalid driver")
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
         con = database.get_connection()
         cur = con.cursor()
         if self.tree.numberOfSelectedRows() > 0:
+            # Update existing activity
             row = self.tree.selectedRow()
             a_id = self.rows[row][0]
-            cur.execute("UPDATE activities SET name=?, driver=? WHERE id=?", (name, driver, a_id))
+            cur.execute("UPDATE activities SET name=?, driver_id=?, evenly=? WHERE id=?",
+                        (name, driver_id if not evenly_flag else None, evenly_flag, a_id))
         else:
-            cur.execute("INSERT INTO activities (name, driver) VALUES(?, ?)", (name, driver))
+            # Insert new activity
+            cur.execute("INSERT INTO activities (name, driver_id, evenly) VALUES (?, ?, ?)",
+                        (name, driver_id if not evenly_flag else None, evenly_flag))
         con.commit()
         con.close()
         self.refresh()
@@ -104,7 +153,9 @@ class ActivitiesPage(NSObject):
 
     def clear_form(self):
         self.name_field.setStringValue_("")
-        self.driver_field.setStringValue_("")
+        self.driver_cb.setStringValue_("")
+        self.evenly_cb.setState_(0)
+        self.driver_cb.setEnabled_(True)
         self.tree.deselectAll_(None)
 
     def delete_(self, sender):
@@ -126,10 +177,29 @@ class ActivitiesPage(NSObject):
             self.refresh()
             self.clear_form()
 
+    def toggleEvenly_(self, sender):
+        # Toggle behavior for "Evenly" checkbox
+        if sender.state():
+            # If evenly checked, disable driver selection
+            self.driver_cb.setEnabled_(False)
+            self.driver_cb.setStringValue_("")
+        else:
+            self.driver_cb.setEnabled_(True)
+
     def refresh(self):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id, name, driver FROM activities")
+        # Fetch activities with driver names and evenly flag
+        cur.execute("""SELECT a.id, a.name,
+                              CASE WHEN a.evenly=1 THEN 'Evenly' ELSE IFNULL(d.name, '') END AS driver_name,
+                              a.evenly
+                       FROM activities a
+                       LEFT JOIN drivers d ON a.driver_id = d.id""")
         self.rows = cur.fetchall()
+        # Populate driver list for combo box
+        cur.execute("SELECT id, name FROM drivers")
+        drivers = [f"{d[0]}: {d[1]}" for d in cur.fetchall()]
         con.close()
+        self.driver_cb.removeAllItems()
+        self.driver_cb.addItemsWithObjectValues_(drivers)
         self.tree.reloadData()
