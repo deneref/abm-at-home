@@ -1,13 +1,14 @@
+import io
+from matplotlib.figure import Figure
 import objc
 from Cocoa import NSObject, NSMakeRect, NSData
 from AppKit import NSView, NSTextField, NSImageView
-from AppKit import NSViewWidthSizable, NSViewMinYMargin, NSViewMaxYMargin
+from AppKit import NSViewWidthSizable, NSViewMinYMargin, NSViewMaxYMargin, NSViewHeightSizable
 import database
 import calculation
 import matplotlib
 matplotlib.use("Agg")
-from matplotlib.figure import Figure
-import io
+
 
 class VisualizationPage(NSObject):
     def init(self):
@@ -16,18 +17,22 @@ class VisualizationPage(NSObject):
             return None
         content_rect = NSMakeRect(0, 0, 1000, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
-        self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
         # Первый блок – распределение затрат по объектам затрат
         first_section_rect = NSMakeRect(0, 310, 1000, 310)
         self.first_section = NSView.alloc().initWithFrame_(first_section_rect)
-        self.first_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
-        label1 = NSTextField.labelWithString_("Распределение по объектам затрат")
+        self.first_section.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewMinYMargin)
+        label1 = NSTextField.labelWithString_(
+            "Распределение по объектам затрат")
         label1.setFrame_(NSMakeRect(5, 280, 400, 20))
         self.first_section.addSubview_(label1)
         # Второй блок – распределение затрат по активностям
         second_section_rect = NSMakeRect(0, 0, 1000, 310)
         self.second_section = NSView.alloc().initWithFrame_(second_section_rect)
-        self.second_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
+        self.second_section.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewMaxYMargin)
         label2 = NSTextField.labelWithString_("Распределение по активностям")
         label2.setFrame_(NSMakeRect(5, 280, 300, 20))
         self.second_section.addSubview_(label2)
@@ -94,29 +99,35 @@ class VisualizationPage(NSObject):
         fig1.savefig(buf1, format="png")
         img_data1 = buf1.getvalue()
         nsdata1 = NSData.dataWithBytes_length_(img_data1, len(img_data1))
-        image1 = objc.lookUpClass("NSImage").alloc().initWithData_(nsdata1) if nsdata1 else None
+        image1 = objc.lookUpClass("NSImage").alloc(
+        ).initWithData_(nsdata1) if nsdata1 else None
         buf2 = io.BytesIO()
         fig2.savefig(buf2, format="png")
         img_data2 = buf2.getvalue()
         nsdata2 = NSData.dataWithBytes_length_(img_data2, len(img_data2))
-        image2 = objc.lookUpClass("NSImage").alloc().initWithData_(nsdata2) if nsdata2 else None
+        image2 = objc.lookUpClass("NSImage").alloc(
+        ).initWithData_(nsdata2) if nsdata2 else None
         # Отображение изображений на интерфейсе
         if image1:
-            self.img_view1 = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, self.first_section.frame().size.width, 270))
+            self.img_view1 = NSImageView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, self.first_section.frame().size.width, 270))
             self.img_view1.setImage_(image1)
             try:
                 from AppKit import NSImageScaleProportionallyUpOrDown
-                self.img_view1.setImageScaling_(NSImageScaleProportionallyUpOrDown)
+                self.img_view1.setImageScaling_(
+                    NSImageScaleProportionallyUpOrDown)
             except Exception:
                 pass
             self.img_view1.setAutoresizingMask_(NSViewWidthSizable)
             self.first_section.addSubview_(self.img_view1)
         if image2:
-            self.img_view2 = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, self.second_section.frame().size.width, 270))
+            self.img_view2 = NSImageView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, self.second_section.frame().size.width, 270))
             self.img_view2.setImage_(image2)
             try:
                 from AppKit import NSImageScaleProportionallyUpOrDown
-                self.img_view2.setImageScaling_(NSImageScaleProportionallyUpOrDown)
+                self.img_view2.setImageScaling_(
+                    NSImageScaleProportionallyUpOrDown)
             except Exception:
                 pass
             self.img_view2.setAutoresizingMask_(NSViewWidthSizable)

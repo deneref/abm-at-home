@@ -1,8 +1,9 @@
 import objc
 from Cocoa import NSObject, NSMakeRect
 from AppKit import NSView, NSTextField, NSButton, NSScrollView, NSTableView, NSTableColumn, NSComboBox, NSAlert
-from AppKit import NSViewWidthSizable, NSViewMinYMargin, NSViewMaxYMargin
+from AppKit import NSViewWidthSizable, NSViewMinYMargin, NSViewMaxYMargin, NSViewHeightSizable, NSViewMinXMargin
 import database
+
 
 class AllocationPage(NSObject):
     def init(self):
@@ -12,12 +13,15 @@ class AllocationPage(NSObject):
         # Основной контейнер страницы
         content_rect = NSMakeRect(0, 0, 1000, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
-        self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
         # Первый раздел (распределение ресурсов на активности)
         first_section_rect = NSMakeRect(0, 310, 1000, 310)
         first_section = NSView.alloc().initWithFrame_(first_section_rect)
-        first_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
-        first_label = NSTextField.labelWithString_("Распределение ресурсов на активности")
+        first_section.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewMinYMargin)
+        first_label = NSTextField.labelWithString_(
+            "Распределение ресурсов на активности")
         first_label.setFrame_(NSMakeRect(5, 290, 400, 20))
         first_section.addSubview_(first_label)
         # Панель ввода для первого раздела (ресурс, активность, количество)
@@ -41,7 +45,7 @@ class AllocationPage(NSObject):
         add_btn1 = NSButton.alloc().initWithFrame_(NSMakeRect(650, 250, 100, 30))
         add_btn1.setTitle_("Add / Update")
         add_btn1.setTarget_(self)
-        add_btn1.setAction_("save_res_alloc:")
+        add_btn1.setAction_("saveResAlloc:")
         add_btn1.setAutoresizingMask_(NSViewMinYMargin)
         first_section.addSubview_(add_btn1)
         # Таблица первого раздела (распределения ресурсов на активности)
@@ -63,13 +67,15 @@ class AllocationPage(NSObject):
         del_btn1 = NSButton.alloc().initWithFrame_(NSMakeRect(5, 5, 80, 30))
         del_btn1.setTitle_("Delete")
         del_btn1.setTarget_(self)
-        del_btn1.setAction_("delete_res_alloc:")
+        del_btn1.setAction_("deleteResAlloc:")
         first_section.addSubview_(del_btn1)
         # Второй раздел (распределение активностей на объекты затрат)
         second_section_rect = NSMakeRect(0, 0, 1000, 310)
         second_section = NSView.alloc().initWithFrame_(second_section_rect)
-        second_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
-        second_label = NSTextField.labelWithString_("Распределение активностей на объекты затрат")
+        second_section.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewMaxYMargin)
+        second_label = NSTextField.labelWithString_(
+            "Распределение активностей на объекты затрат")
         second_label.setFrame_(NSMakeRect(5, 290, 400, 20))
         second_section.addSubview_(second_label)
         # Панель ввода для второго раздела (активность, объект, объем)
@@ -88,12 +94,13 @@ class AllocationPage(NSObject):
         qty_label = NSTextField.labelWithString_("Объем")
         qty_label.setFrame_(NSMakeRect(480, 260, 50, 20))
         second_section.addSubview_(qty_label)
-        self.quantity_field = NSTextField.alloc().initWithFrame_(NSMakeRect(535, 255, 80, 25))
+        self.quantity_field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(535, 255, 80, 25))
         second_section.addSubview_(self.quantity_field)
         add_btn2 = NSButton.alloc().initWithFrame_(NSMakeRect(610, 250, 100, 30))
         add_btn2.setTitle_("Add / Update")
         add_btn2.setTarget_(self)
-        add_btn2.setAction_("save_act_alloc:")
+        add_btn2.setAction_("saveActAlloc:")
         add_btn2.setAutoresizingMask_(NSViewMinXMargin)
         second_section.addSubview_(add_btn2)
         # Таблица второго раздела (распределения активностей на объекты затрат)
@@ -115,7 +122,7 @@ class AllocationPage(NSObject):
         del_btn2 = NSButton.alloc().initWithFrame_(NSMakeRect(5, 5, 80, 30))
         del_btn2.setTitle_("Delete")
         del_btn2.setTarget_(self)
-        del_btn2.setAction_("delete_act_alloc:")
+        del_btn2.setAction_("deleteActAlloc_:")
         second_section.addSubview_(del_btn2)
         # Добавление разделов на страницу
         self.view.addSubview_(first_section)
@@ -155,7 +162,7 @@ class AllocationPage(NSObject):
         except Exception:
             return None
 
-    def save_res_alloc_(self, sender):
+    def saveResAlloc_(self, sender):
         r_id = self.parse_id(self.resource_cb.stringValue())
         a_id = self.parse_id(self.activity_cb.stringValue())
         try:
@@ -180,7 +187,7 @@ class AllocationPage(NSObject):
         con.close()
         self.refresh()
 
-    def delete_res_alloc_(self, sender):
+    def deleteResAlloc_(self, sender):
         sel = self.tree_res_alloc.selectedRow()
         if sel is None or sel < 0:
             return
@@ -196,12 +203,13 @@ class AllocationPage(NSObject):
         if r_id is None or a_id is None:
             con.close()
             return
-        cur.execute("DELETE FROM resource_allocations WHERE resource_id=? AND activity_id=?", (r_id, a_id))
+        cur.execute(
+            "DELETE FROM resource_allocations WHERE resource_id=? AND activity_id=?", (r_id, a_id))
         con.commit()
         con.close()
         self.refresh()
 
-    def save_act_alloc_(self, sender):
+    def saveActAlloc_(self, sender):
         a_id = self.parse_id(self.activity_cb2.stringValue())
         c_id = self.parse_id(self.costobj_cb.stringValue())
         try:
@@ -226,7 +234,7 @@ class AllocationPage(NSObject):
         con.close()
         self.refresh()
 
-    def delete_act_alloc_(self, sender):
+    def deleteActAlloc_(self, sender):
         sel = self.tree_act_alloc.selectedRow()
         if sel is None or sel < 0:
             return
@@ -242,7 +250,8 @@ class AllocationPage(NSObject):
         if a_id is None or c_id is None:
             con.close()
             return
-        cur.execute("DELETE FROM activity_allocations WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
+        cur.execute(
+            "DELETE FROM activity_allocations WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
         con.commit()
         con.close()
         self.refresh()
