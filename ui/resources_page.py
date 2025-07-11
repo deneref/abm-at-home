@@ -1,104 +1,158 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
+import objc
+from Cocoa import NSObject, NSMakeRect
+from AppKit import NSView, NSTextField, NSButton, NSScrollView, NSTableView, NSTableColumn, NSAlert
+from AppKit import NSViewWidthSizable, NSViewHeightSizable, NSViewMaxYMargin
 import database
 
-
-class ResourcesPage(ttk.Frame):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.build_ui()
+class ResourcesPage(NSObject):
+    def init(self):
+        self = objc.super(ResourcesPage, self).init()
+        if self is None:
+            return None
+        # Контейнер содержимого страницы
+        content_rect = NSMakeRect(0, 0, 1000, 620)
+        self.view = NSView.alloc().initWithFrame_(content_rect)
+        self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        # Таблица (в ScrollView) для списка ресурсов
+        table_rect = NSMakeRect(0, 30, 1000, 590)
+        self.tree = NSTableView.alloc().initWithFrame_(table_rect)
+        columns = [("id", 120), ("name", 120), ("cost_total", 120), ("unit", 120)]
+        for col_id, width in columns:
+            col = NSTableColumn.alloc().initWithIdentifier_(col_id)
+            col.setWidth_(width)
+            col.headerCell().setStringValue_(col_id)
+            self.tree.addTableColumn_(col)
+        self.tree.setDelegate_(self)
+        self.tree.setDataSource_(self)
+        self.tree.setAllowsMultipleSelection_(False)
+        self.tree.setUsesAlternatingRowBackgroundColors_(True)
+        scroll_view = NSScrollView.alloc().initWithFrame_(table_rect)
+        scroll_view.setDocumentView_(self.tree)
+        scroll_view.setHasVerticalScroller_(True)
+        scroll_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.view.addSubview_(scroll_view)
+        # Форма ввода внизу (добавление/редактирование ресурса)
+        form_rect = NSMakeRect(0, 0, 1000, 30)
+        form_view = NSView.alloc().initWithFrame_(form_rect)
+        form_view.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
+        name_label = NSTextField.labelWithString_("Name")
+        name_label.setFrame_(NSMakeRect(5, 5, 50, 20))
+        form_view.addSubview_(name_label)
+        self.name_field = NSTextField.alloc().initWithFrame_(NSMakeRect(60, 5, 150, 20))
+        form_view.addSubview_(self.name_field)
+        cost_label = NSTextField.labelWithString_("Cost")
+        cost_label.setFrame_(NSMakeRect(220, 5, 40, 20))
+        form_view.addSubview_(cost_label)
+        self.cost_field = NSTextField.alloc().initWithFrame_(NSMakeRect(265, 5, 100, 20))
+        form_view.addSubview_(self.cost_field)
+        unit_label = NSTextField.labelWithString_("Unit")
+        unit_label.setFrame_(NSMakeRect(380, 5, 30, 20))
+        form_view.addSubview_(unit_label)
+        self.unit_field = NSTextField.alloc().initWithFrame_(NSMakeRect(415, 5, 100, 20))
+        form_view.addSubview_(self.unit_field)
+        add_button = NSButton.alloc().initWithFrame_(NSMakeRect(530, 0, 100, 30))
+        add_button.setTitle_("Add / Update")
+        add_button.setTarget_(self)
+        add_button.setAction_("save:")
+        form_view.addSubview_(add_button)
+        del_button = NSButton.alloc().initWithFrame_(NSMakeRect(640, 0, 80, 30))
+        del_button.setTitle_("Delete")
+        del_button.setTarget_(self)
+        del_button.setAction_("delete:")
+        form_view.addSubview_(del_button)
+        self.view.addSubview_(form_view)
+        # Загрузка начальных данных
         self.refresh()
+        return self
 
-    def build_ui(self):
-        columns = ("id", "name", "cost_total", "unit")
-        self.tree = ttk.Treeview(self, columns=columns, show="headings")
-        for col in columns:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=120)
-        self.tree.pack(fill="both", expand=True)
+    def numberOfRowsInTableView_(self, tableView):
+        return len(self.rows) if hasattr(self, 'rows') else 0
 
-        form = ttk.Frame(self)
-        form.pack(fill="x", pady=5)
+    def tableView_objectValueForTableColumn_row_(self, tableView, tableColumn, rowIndex):
+        col_id = str(tableColumn.identifier())
+        if col_id == "id":
+            return str(self.rows[rowIndex][0])
+        elif col_id == "name":
+            return self.rows[rowIndex][1]
+        elif col_id == "cost_total":
+            return str(self.rows[rowIndex][2])
+        elif col_id == "unit":
+            return self.rows[rowIndex][3]
+        return ""
 
-        ttk.Label(form, text="Name").grid(row=0, column=0)
-        self.name_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.name_var).grid(row=0, column=1)
-
-        ttk.Label(form, text="Cost").grid(row=0, column=2)
-        self.cost_var = tk.DoubleVar()
-        ttk.Entry(form, textvariable=self.cost_var).grid(row=0, column=3)
-
-        ttk.Label(form, text="Unit").grid(row=0, column=4)
-        self.unit_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.unit_var).grid(row=0, column=5)
-
-        ttk.Button(form, text="Add / Update",
-                   command=self.save).grid(row=0, column=6, padx=5)
-        ttk.Button(form, text="Delete", command=self.delete).grid(
-            row=0, column=7)
-
-        self.tree.bind("<<TreeviewSelect>>", self.on_select)
-
-    def refresh(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        con = database.get_connection()
-        cur = con.cursor()
-        cur.execute("SELECT id, name, cost_total, unit FROM resources")
-        for row in cur.fetchall():
-            self.tree.insert("", "end", values=row)
-        con.close()
-
-    def on_select(self, event):
-        sel = self.tree.selection()
-        if not sel:
+    def tableViewSelectionDidChange_(self, notification):
+        if self.tree.numberOfSelectedRows() == 0:
             return
-        vals = self.tree.item(sel[0], "values")
-        self.name_var.set(vals[1])
-        self.cost_var.set(vals[2])
-        self.unit_var.set(vals[3])
-
-    def save(self):
-        name = self.name_var.get().strip()
-        try:
-            cost = float(self.cost_var.get())
-        except ValueError:
-            messagebox.showerror("Error", "Invalid cost")
+        row = self.tree.selectedRow()
+        if row < 0 or row >= len(self.rows):
             return
-        unit = self.unit_var.get().strip()
+        selected = self.rows[row]
+        self.name_field.setStringValue_(selected[1])
+        self.cost_field.setStringValue_(str(selected[2]))
+        self.unit_field.setStringValue_(selected[3])
+
+    def save_(self, sender):
+        name = self.name_field.stringValue().strip()
+        cost_str = self.cost_field.stringValue().strip()
+        unit = self.unit_field.stringValue().strip()
         if not name or not unit:
-            messagebox.showerror("Error", "Name and unit required")
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Error")
+            alert.setInformativeText_("Name and unit required")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
             return
-        sel = self.tree.selection()
+        try:
+            cost = float(cost_str)
+        except ValueError:
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Error")
+            alert.setInformativeText_("Invalid cost")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
         con = database.get_connection()
         cur = con.cursor()
-        if sel:
-            rid = self.tree.item(sel[0], "values")[0]
-            cur.execute(
-                "UPDATE resources SET name=?, cost_total=?, unit=? WHERE id=?", (name, cost, unit, rid))
+        if self.tree.numberOfSelectedRows() > 0:
+            row = self.tree.selectedRow()
+            rid = self.rows[row][0]
+            cur.execute("UPDATE resources SET name=?, cost_total=?, unit=? WHERE id=?", (name, cost, unit, rid))
         else:
-            cur.execute(
-                "INSERT INTO resources (name, cost_total, unit) VALUES (?,?,?)", (name, cost, unit))
+            cur.execute("INSERT INTO resources (name, cost_total, unit) VALUES (?,?,?)", (name, cost, unit))
         con.commit()
         con.close()
         self.refresh()
         self.clear_form()
 
     def clear_form(self):
-        self.name_var.set("")
-        self.cost_var.set(0.0)
-        self.unit_var.set("")
-        self.tree.selection_remove(self.tree.selection())
+        self.name_field.setStringValue_("")
+        self.cost_field.setStringValue_("0.0")
+        self.unit_field.setStringValue_("")
+        self.tree.deselectAll_(None)
 
-    def delete(self):
-        sel = self.tree.selection()
-        if not sel:
+    def delete_(self, sender):
+        if self.tree.numberOfSelectedRows() == 0:
             return
-        rid = self.tree.item(sel[0], "values")[0]
-        if messagebox.askyesno("Confirm", "Delete selected resource?"):
+        row = self.tree.selectedRow()
+        rid = self.rows[row][0]
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Confirm")
+        alert.setInformativeText_("Delete selected resource?")
+        alert.addButtonWithTitle_("Yes")
+        alert.addButtonWithTitle_("No")
+        response = alert.runModal()
+        if response == 1000:
             con = database.get_connection()
             con.execute("DELETE FROM resources WHERE id=?", (rid,))
             con.commit()
             con.close()
             self.refresh()
             self.clear_form()
+
+    def refresh(self):
+        con = database.get_connection()
+        cur = con.cursor()
+        cur.execute("SELECT id, name, cost_total, unit FROM resources")
+        self.rows = cur.fetchall()
+        con.close()
+        self.tree.reloadData()

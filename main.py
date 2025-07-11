@@ -1,12 +1,11 @@
 import database
 from ui.main_window import MainWindow
 
-
 def main():
+    # Инициализация базы данных и запуск приложения
     database.init_db()
-    app = MainWindow()
-    app.mainloop()
-
+    app = MainWindow.alloc().init()
+    app.run()
 
 if __name__ == "__main__":
     main()
