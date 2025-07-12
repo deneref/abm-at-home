@@ -242,10 +242,39 @@ def insert_data():
          ,("Разработка X Пошив Пробников", 1)
          ,("Производство X Упаковка", 1)
          ,("Производство X Пошив", 1)
-        ,("Производство X Пошив", 1)
+         ,("Производство X Пошив", 1)
         ;
     """
     )
 
+    con.commit()
+    con.close()
+
+
+def reset_all_tables() -> None:
+    """
+    Удаляет все данные из всех пользовательских таблиц и сбрасывает
+    счётчики AUTOINCREMENT (sqlite_sequence) до 0.
+    """
+    con = get_connection()
+    cur = con.cursor()
+
+    # временно отключаем внешние ключи, чтобы порядок удаления не был важен
+    cur.execute("PRAGMA foreign_keys = OFF;")
+
+    # получаем список всех пользовательских таблиц (служебные sqlite_% исключаем)
+    cur.execute("""
+        SELECT name
+          FROM sqlite_master
+         WHERE type='table'
+           AND name NOT LIKE 'sqlite_%'
+    """)
+    for (table_name,) in cur.fetchall():
+        cur.execute(f'DELETE FROM "{table_name}";')
+
+    # сбрасываем автоинкременты
+    cur.execute("DELETE FROM sqlite_sequence;")
+
+    cur.execute("PRAGMA foreign_keys = ON;")
     con.commit()
     con.close()
