@@ -18,7 +18,8 @@ class ActivitiesPage(NSObject):
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = objc.lookUpClass(
             "NSTableView").alloc().initWithFrame_(table_rect)
-        columns = [("id", 120), ("name", 150), ("driver", 150)]
+        columns = [("id", 120), ("name", 150), ("driver", 150),
+                   ("allocated_cost", 120)]
         for col_id, width in columns:
             col = objc.lookUpClass(
                 "NSTableColumn").alloc().initWithIdentifier_(col_id)
@@ -83,6 +84,8 @@ class ActivitiesPage(NSObject):
             return self.rows[rowIndex][1]
         elif col_id == "driver":
             return self.rows[rowIndex][2]
+        elif col_id == "allocated_cost":
+            return str(self.rows[rowIndex][4])
         return ""
 
     def tableViewSelectionDidChange_(self, notification):
@@ -93,7 +96,7 @@ class ActivitiesPage(NSObject):
         if row < 0 or row >= len(self.rows):
             return
         selected = self.rows[row]
-        # selected structure: (id, name, driver_name, evenly_flag)
+        # selected structure: (id, name, driver_name, evenly_flag, allocated_cost)
         self.name_field.setStringValue_(selected[1])
         if selected[3] == 1:  # evenly
             self.evenly_cb.setState_(1)
@@ -140,14 +143,20 @@ class ActivitiesPage(NSObject):
             # Update existing activity
             row = self.tree.selectedRow()
             a_id = self.rows[row][0]
-            cur.execute("UPDATE activities SET name=?, driver_id=?, evenly=? WHERE id=?",
-                        (name, driver_id if not evenly_flag else None, evenly_flag, a_id))
+            cur.execute(
+                "UPDATE activities SET name=?, driver_id=?, evenly=? WHERE id=?",
+                (name, driver_id if not evenly_flag else None, evenly_flag, a_id),
+            )
         else:
             # Insert new activity
-            cur.execute("INSERT INTO activities (name, driver_id, evenly) VALUES (?, ?, ?)",
-                        (name, driver_id if not evenly_flag else None, evenly_flag))
+            cur.execute(
+                "INSERT INTO activities (name, driver_id, evenly) VALUES (?, ?, ?)",
+                (name, driver_id if not evenly_flag else None, evenly_flag),
+            )
+            a_id = cur.lastrowid
         con.commit()
         con.close()
+        database.update_even_allocations(a_id, evenly_flag)
         self.refresh()
         self.clear_form()
 
@@ -192,7 +201,8 @@ class ActivitiesPage(NSObject):
         # Fetch activities with driver names and evenly flag
         cur.execute("""SELECT a.id, a.name,
                               CASE WHEN a.evenly=1 THEN 'Evenly' ELSE IFNULL(d.name, '') END AS driver_name,
-                              a.evenly
+                              a.evenly,
+                              a.allocated_cost
                        FROM activities a
                        LEFT JOIN drivers d ON a.driver_id = d.id""")
         self.rows = cur.fetchall()

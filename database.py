@@ -216,6 +216,37 @@ def update_activity_costs() -> None:
     con.close()
 
 
+def update_even_allocations(activity_id: int, evenly: int) -> None:
+    """Create or remove cost object allocations for an activity based on
+    its evenly flag."""
+    con = get_connection()
+    cur = con.cursor()
+    # Remove existing allocations
+    cur.execute("DELETE FROM activity_allocations WHERE activity_id=?",
+                (activity_id,))
+    cur.execute(
+        "DELETE FROM activity_allocations_monthly WHERE activity_id=?",
+        (activity_id,))
+    if evenly:
+        # Even distribution -> allocate quantity=1 to each cost object
+        cur.execute("SELECT id FROM cost_objects")
+        cost_objects = [row[0] for row in cur.fetchall()]
+        cur.execute("SELECT period FROM periods")
+        periods = [row[0] for row in cur.fetchall()]
+        for co_id in cost_objects:
+            cur.execute(
+                "INSERT INTO activity_allocations(activity_id, cost_object_id, quantity) VALUES (?, ?, 1)",
+                (activity_id, co_id),
+            )
+            for p in periods:
+                cur.execute(
+                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity) VALUES (?, ?, ?, 1)",
+                    (activity_id, co_id, p),
+                )
+    con.commit()
+    con.close()
+
+
 def insert_data():
     con = get_connection()
     cur = con.cursor()
