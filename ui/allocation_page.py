@@ -122,9 +122,9 @@ class AllocationPage(NSObject):
         self.__tuneCombo__(self.costobj_cb)
         second_section.addSubview_(self.costobj_cb)
 
-        desc_label = NSTextField.labelWithString_("Описание")
-        desc_label.setFrame_(NSMakeRect(875, 260, 60, 20))
-        second_section.addSubview_(desc_label)
+        # desc_label = NSTextField.labelWithString_("Описание")
+        # desc_label.setFrame_(NSMakeRect(875, 260, 60, 20))
+        # second_section.addSubview_(desc_label)
 
         self.driver_val_cb = NSComboBox.alloc().initWithFrame_(
             # wider combo box (for driver values)
@@ -134,9 +134,9 @@ class AllocationPage(NSObject):
         self.driver_val_cb.setEnabled_(False)
         second_section.addSubview_(self.driver_val_cb)
 
-        qty_label = NSTextField.labelWithString_("Объем")
-        qty_label.setFrame_(NSMakeRect(1150, 260, 50, 20))
-        second_section.addSubview_(qty_label)
+        # qty_label = NSTextField.labelWithString_("Объем")
+        # qty_label.setFrame_(NSMakeRect(1150, 260, 50, 20))
+        # second_section.addSubview_(qty_label)
 
         self.quantity_field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(1210, 255, 80, 25))

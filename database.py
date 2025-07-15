@@ -19,6 +19,7 @@ def init_db():
     # ── базовые таблицы ────────────────────────────────────────────────────────
     cur.executescript(
         """
+
     CREATE TABLE IF NOT EXISTS resources (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
