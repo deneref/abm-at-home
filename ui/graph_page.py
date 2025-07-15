@@ -2,7 +2,7 @@ from matplotlib.figure import Figure
 import io
 import objc
 from Cocoa import NSObject, NSMakeRect, NSData
-from AppKit import NSView, NSImageView
+from AppKit import NSView, NSImageView, NSButton
 from AppKit import NSViewWidthSizable, NSViewHeightSizable
 import database
 import matplotlib
@@ -18,9 +18,19 @@ class GraphPage(NSObject):
         self.view = NSView.alloc().initWithFrame_(content_rect)
         self.view.setAutoresizingMask_(
             NSViewWidthSizable | NSViewHeightSizable)
+
+        btn = NSButton.alloc().initWithFrame_(NSMakeRect(10, 580, 120, 30))
+        btn.setTitle_("Show Graph")
+        btn.setTarget_(self)
+        btn.setAction_("showGraph:")
+        self.view.addSubview_(btn)
+
         # Draw initial graph (if any data)
         self.refresh()
         return self
+
+    def showGraph_(self, sender):
+        self.refresh()
 
     def refresh(self):
         # Remove previous graph image if exists

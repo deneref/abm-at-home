@@ -70,7 +70,7 @@ class DriversPage(NSObject):
         # Table of driver values
         table2_rect = NSMakeRect(0, 30, 1000, 250)
         self.value_table = NSTableView.alloc().initWithFrame_(table2_rect)
-        for col_id, width in [("id", 120), ("description", 300), ("value", 100)]:
+        for col_id, width in [("id", 120), ("cost_object_nm", 300), ("value", 100)]:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
             col.headerCell().setStringValue_(col_id)
@@ -89,7 +89,7 @@ class DriversPage(NSObject):
         form2_rect = NSMakeRect(0, 0, 1000, 30)
         form2_view = NSView.alloc().initWithFrame_(form2_rect)
         form2_view.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
-        desc_label = NSTextField.labelWithString_("Description")
+        desc_label = NSTextField.labelWithString_("Cost Object")
         desc_label.setFrame_(NSMakeRect(5, 5, 80, 20))
         form2_view.addSubview_(desc_label)
         self.desc_field = NSTextField.alloc().initWithFrame_(NSMakeRect(90, 5, 150, 20))
@@ -134,7 +134,7 @@ class DriversPage(NSObject):
         elif tableView == self.value_table:
             if col_id == "id":
                 return str(self.value_rows[rowIndex][0])
-            elif col_id == "description":
+            elif col_id == "cost_object_nm":
                 return self.value_rows[rowIndex][1]
             elif col_id == "value":
                 return str(self.value_rows[rowIndex][2])
@@ -166,7 +166,7 @@ class DriversPage(NSObject):
             con = database.get_connection()
             cur = con.cursor()
             cur.execute(
-                "SELECT id, description, value FROM driver_values WHERE driver_id=?", (d_id,))
+                "SELECT id, cost_object_nm, value FROM driver_values WHERE driver_id=?", (d_id,))
             self.value_rows = cur.fetchall()
             con.close()
             self.value_table.reloadData()
@@ -178,7 +178,7 @@ class DriversPage(NSObject):
             if row < 0 or row >= len(self.value_rows):
                 return
             selected = self.value_rows[row]
-            # selected = (id, description, value)
+            # selected = (id, cost_object_nm, value)
             self.desc_field.setStringValue_(selected[1])
             self.val_field.setStringValue_(str(selected[2]))
 
@@ -257,9 +257,9 @@ class DriversPage(NSObject):
             alert.addButtonWithTitle_("OK")
             alert.runModal()
             return
-        desc = self.desc_field.stringValue().strip()
+        co_name = self.desc_field.stringValue().strip()
         val_str = self.val_field.stringValue().strip()
-        if not desc or not val_str:
+        if not co_name or not val_str:
             alert = NSAlert.alloc().init()
             alert.setMessageText_("Error")
             alert.setInformativeText_("Fill all fields")
@@ -282,11 +282,12 @@ class DriversPage(NSObject):
             row = self.value_table.selectedRow()
             val_id = self.value_rows[row][0]
             cur.execute(
-                "UPDATE driver_values SET description=?, value=? WHERE id=?", (desc, val, val_id))
+                "UPDATE driver_values SET cost_object_nm=?, value=? WHERE id=?", (co_name, val, val_id))
         else:
             # Insert new driver value for current driver
-            cur.execute("INSERT INTO driver_values(driver_id, description, value) VALUES(?, ?, ?)",
-                        (self.current_driver_id, desc, val))
+            cur.execute("INSERT INTO driver_values(driver_id, cost_object_nm, value) VALUES(?, ?, ?)",
+                        (self.current_driver_id, co_name, val))
+            val_id = cur.lastrowid
         try:
             con.commit()
         except Exception as e:
@@ -299,12 +300,13 @@ class DriversPage(NSObject):
             alert.runModal()
             return
         con.close()
+        database.apply_driver_values([val_id])
         # Reload values list
         if self.current_driver_id is not None:
             con2 = database.get_connection()
             cur2 = con2.cursor()
             cur2.execute(
-                "SELECT id, description, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
+                "SELECT id, cost_object_nm, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
             self.value_rows = cur2.fetchall()
             con2.close()
             self.value_table.reloadData()
@@ -345,7 +347,7 @@ class DriversPage(NSObject):
             con2 = database.get_connection()
             cur2 = con2.cursor()
             cur2.execute(
-                "SELECT id, description, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
+                "SELECT id, cost_object_nm, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
             self.value_rows = cur2.fetchall()
             con2.close()
             self.value_table.reloadData()
