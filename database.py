@@ -1,5 +1,4 @@
 import sqlite3
-from contextlib import contextmanager
 import pandas as pd
 
 DB_NAME = "abm_data.db"
@@ -17,16 +16,10 @@ def init_db():
     con = get_connection()
     cur = con.cursor()
 
-    # ── вспомогательная функция ────────────────────────────────────────────────
-    def add_column_if_missing(table: str, col_def: str) -> None:
-        col_name = col_def.split()[0]
-        cur.execute(f"PRAGMA table_info({table})")
-        if col_name not in [row[1] for row in cur.fetchall()]:
-            cur.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
-
     # ── базовые таблицы ────────────────────────────────────────────────────────
     cur.executescript(
         """
+
     CREATE TABLE IF NOT EXISTS resources (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -37,12 +30,15 @@ def init_db():
     CREATE TABLE IF NOT EXISTS activities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        driver TEXT                        -- временно, для миграции
+        driver_id INTEGER REFERENCES drivers(id) ON DELETE RESTRICT,
+        evenly INTEGER NOT NULL DEFAULT 0,
+        allocated_cost REAL NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS cost_objects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        allocated_cost REAL NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS resource_allocations (
@@ -57,10 +53,13 @@ def init_db():
     CREATE TABLE IF NOT EXISTS activity_allocations (
         activity_id INTEGER NOT NULL,
         cost_object_id INTEGER NOT NULL,
-        quantity REAL NOT NULL,
+        driver_amt INTEGER NOT NULL,
+        driver_value_id INTEGER,
+        allocated_cost REAL NOT NULL DEFAULT 0,
         PRIMARY KEY (activity_id, cost_object_id),
         FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE,
-        FOREIGN KEY (cost_object_id) REFERENCES cost_objects(id) ON DELETE CASCADE
+        FOREIGN KEY (cost_object_id) REFERENCES cost_objects(id) ON DELETE CASCADE,
+        FOREIGN KEY (driver_value_id) REFERENCES driver_values(id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS drivers (
@@ -71,10 +70,10 @@ def init_db():
     CREATE TABLE IF NOT EXISTS driver_values (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         driver_id INTEGER NOT NULL,
-        description TEXT NOT NULL,
+        cost_object_nm TEXT NOT NULL,
         value REAL NOT NULL,
         FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
-        UNIQUE(driver_id, description)
+        UNIQUE(driver_id, cost_object_nm)
     );
 
     CREATE TABLE IF NOT EXISTS periods (
@@ -95,96 +94,23 @@ def init_db():
         FOREIGN KEY(period) REFERENCES periods(period) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS resource_allocations_monthly (
-        resource_id INTEGER NOT NULL,
-        activity_id INTEGER NOT NULL,
-        period TEXT NOT NULL,
-        amount REAL NOT NULL,
-        PRIMARY KEY(resource_id, activity_id, period),
-        FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE,
-        FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
-        FOREIGN KEY(period) REFERENCES periods(period) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS activity_allocations_monthly (
-        activity_id INTEGER NOT NULL,
-        cost_object_id INTEGER NOT NULL,
-        period TEXT NOT NULL,
-        quantity REAL NOT NULL,
-        driver_value_id INTEGER,
-        PRIMARY KEY(activity_id, cost_object_id, period),
-        FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
-        FOREIGN KEY(cost_object_id) REFERENCES cost_objects(id) ON DELETE CASCADE,
-        FOREIGN KEY(driver_value_id) REFERENCES driver_values(id) ON DELETE RESTRICT,
-        FOREIGN KEY(period) REFERENCES periods(period) ON DELETE CASCADE
-    );
     """
     )
     con.commit()
 
-    # ── новые столбцы в activities ────────────────────────────────────────────
-    add_column_if_missing(
-        "activities",
-        "driver_id INTEGER REFERENCES drivers(id) ON DELETE RESTRICT",
-    )
-    add_column_if_missing(
-        "activities",
-        "evenly INTEGER NOT NULL DEFAULT 0",
-    )
-    add_column_if_missing(
-        "activities",
-        "allocated_cost REAL NOT NULL DEFAULT 0",
-    )
-
-    # ── миграция старого текстового driver ────────────────────────────────────
-    cur.execute("PRAGMA table_info(activities)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "driver" in columns:
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO drivers(name)
-                SELECT DISTINCT driver FROM activities
-                WHERE driver IS NOT NULL
-            """
-        )
-        cur.execute(
-            """
-            UPDATE activities
-               SET driver_id = (
-                    SELECT id FROM drivers
-                     WHERE name = activities.driver
-               )
-             WHERE driver IS NOT NULL
-            """
-        )
-        try:
-            cur.execute("ALTER TABLE activities DROP COLUMN driver")
-        except sqlite3.OperationalError:
-            # если SQLite старее 3.35, DROP COLUMN недоступен
-            pass
-
-    # ── заполнение помесячных таблиц (идемпотентно) ──────────────────────────
+    # ── заполнение периодических таблиц (идемпотентно) ───────────────────────
     cur.executescript(
         """
     INSERT OR IGNORE INTO resource_costs(resource_id, period, cost)
         SELECT r.id, p.period, r.cost_total
           FROM resources r
                CROSS JOIN periods p;
-
-    INSERT OR IGNORE INTO resource_allocations_monthly(resource_id, activity_id, period, amount)
-        SELECT ra.resource_id, ra.activity_id, p.period, ra.amount
-          FROM resource_allocations ra
-               CROSS JOIN periods p;
-
-    INSERT OR IGNORE INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity)
-        SELECT aa.activity_id, aa.cost_object_id, p.period, aa.quantity
-          FROM activity_allocations aa
-               CROSS JOIN periods p;
     """
     )
 
     con.commit()
     con.close()
+    apply_driver_values()
     update_activity_costs()
 
 
@@ -214,6 +140,52 @@ def update_activity_costs() -> None:
     )
     con.commit()
     con.close()
+    update_cost_object_costs()
+
+
+def update_activity_allocation_costs() -> None:
+    """Update allocated_cost for each activity allocation based on driver amounts."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+        WITH totals AS (
+            SELECT activity_id, SUM(driver_amt) AS total_amt
+              FROM activity_allocations
+             GROUP BY activity_id
+        )
+        UPDATE activity_allocations AS aa
+           SET allocated_cost = (
+                SELECT CASE WHEN totals.total_amt > 0
+                            THEN a.allocated_cost * aa.driver_amt / totals.total_amt
+                            ELSE 0 END
+                  FROM activities a
+                  JOIN totals ON totals.activity_id = aa.activity_id
+                 WHERE a.id = aa.activity_id
+           )
+        """
+    )
+    con.commit()
+    con.close()
+
+
+def update_cost_object_costs() -> None:
+    """Recalculate allocated cost for each cost object based on activity allocations."""
+    update_activity_allocation_costs()
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+        UPDATE cost_objects
+           SET allocated_cost = COALESCE((
+                SELECT SUM(aa.allocated_cost)
+                  FROM activity_allocations aa
+                 WHERE aa.cost_object_id = cost_objects.id
+           ), 0)
+        """
+    )
+    con.commit()
+    con.close()
 
 
 def update_even_allocations(activity_id: int, evenly: int) -> None:
@@ -222,101 +194,79 @@ def update_even_allocations(activity_id: int, evenly: int) -> None:
     con = get_connection()
     cur = con.cursor()
     # Remove existing allocations
-    cur.execute("DELETE FROM activity_allocations WHERE activity_id=?",
-                (activity_id,))
     cur.execute(
-        "DELETE FROM activity_allocations_monthly WHERE activity_id=?",
-        (activity_id,))
+        "DELETE FROM activity_allocations WHERE activity_id=?",
+        (activity_id,),
+    )
     if evenly:
-        # Even distribution -> allocate quantity=1 to each cost object
+        # Even distribution -> allocate driver_amt=1 to each cost object
         cur.execute("SELECT id FROM cost_objects")
         cost_objects = [row[0] for row in cur.fetchall()]
-        cur.execute("SELECT period FROM periods")
-        periods = [row[0] for row in cur.fetchall()]
         for co_id in cost_objects:
             cur.execute(
-                "INSERT INTO activity_allocations(activity_id, cost_object_id, quantity) VALUES (?, ?, 1)",
+                "INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost) VALUES (?, ?, 1, NULL, 0)",
                 (activity_id, co_id),
             )
-            for p in periods:
-                cur.execute(
-                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity) VALUES (?, ?, ?, 1)",
-                    (activity_id, co_id, p),
-                )
     con.commit()
     con.close()
 
 
-def insert_data():
+def apply_driver_values(dv_ids: list[int] | None = None) -> None:
+    """Create or update activity allocations based on driver values.
+
+    If ``dv_ids`` is ``None`` all driver values are processed.
+    """
     con = get_connection()
     cur = con.cursor()
 
-    # ── заполнение помесячных таблиц (идемпотентно) ──────────────────────────
-    cur.executescript(
-        """
-    delete from cost_objects;
-    INSERT OR IGNORE INTO cost_objects(name)
-        VALUES 
-        ("Кепка цветок-солнце Графит")
-        ,("Кепка цветок-солнце Маджента")
-        ,("Кепка цветок-солнце Бежевая")
-        ,("Кепка День Графит")
-        ,("Кепка День Маджента")
-        ,("Лонгслив Мартини")
-        ,("Лонгслив Камминг Белый")
-        ,("Лонгслив Камминг Розовый")
-        ,("Лонгслив Тайгер Белый")
-        ,("Лонгслив Тайгер Розовый")
-        ,("Худи Оливки")
-        ,("Худи Камминг Графит")
-        ,("Худи Камминг Синий")
-        ,("Худи Лаверс Графит")
-        ,("Худи Лаверс Синий")
-        ;
+    if dv_ids:
+        placeholders = ",".join("?" for _ in dv_ids)
+        cur.execute(
+            f"SELECT id, driver_id, cost_object_nm, value FROM driver_values WHERE id IN ({placeholders})",
+            dv_ids,
+        )
+    else:
+        cur.execute(
+            "SELECT id, driver_id, cost_object_nm, value FROM driver_values")
 
-        delete from drivers;
-        insert into drivers(name)
-        values("Отзывы Я.Маркет (кол-во)")
-        ,("Продано Я.Маркет (шт)")
-        ,("Постов instagram")
-        ;
+    for dv_id, driver_id, co_name, val in cur.fetchall():
+        cur.execute("SELECT id FROM cost_objects WHERE name=?", (co_name,))
+        row = cur.fetchone()
+        if row:
+            co_id = row[0]
+        else:
+            cur.execute("INSERT INTO cost_objects(name) VALUES(?)", (co_name,))
+            co_id = cur.lastrowid
 
-         -- данные на 11.07.2025
-         delete from resources;
-         INSERT OR IGNORE INTO resources(name, cost_total, unit)
-         values
-         ("Размещение на витрине Яндекс", 195830, "рубли")
-         ,("Продвижение Яндекс", 100.0, "рубли")
-         ,("Отзывы Яндекс Маркет", 15152, "рубли")
-         ,("Буст Яндекс Маркет", 29706, "рубли")
-         ,("Полки Яндекс Маркет ", 6403, "рубли")
-         ,("Доставка Яндекс Маркет ", 75420, "рубли")
-         ,("Перевод платежа Яндекс Маркет ", 19362, "рубли")
-         ,("Поставка (транзитный склад)", 5700, "рубли")
-         ,("Яся ФОТ", 70000, "рубли")
-         ,("Налог", 70000, "рубли")
-         ,("Стоимость кредита", 70000, "рубли")
-         ,("Займ родители Дани", 20000, "рубли")
-         ,("Займ родители Антона", 28000, "рубли")
-         ;
-
-         delete from activities;
-         INSERT OR IGNORE INTO activities(name, driver_id)
-         values("Получение отзывов X Яндекс Маркет", 1)
-         ,("Функционирование X Яндекс Маркет", 1)
-         ,("Функционирование X Оплата кредита", 1)
-         ,("Функционирование X Оплата займов", 1)
-         ,("Разработка X Дизайн", 1)
-         ,("Разработка X Пошив Пробников", 1)
-         ,("Производство X Упаковка", 1)
-         ,("Производство X Пошив", 1)
-         ,("Производство X Пошив", 1)
-        ;
-    """
-    )
+        cur.execute("SELECT id FROM activities WHERE driver_id=?", (driver_id,))
+        act_ids = [r[0] for r in cur.fetchall()]
+        for a_id in act_ids:
+            cur.execute(
+                "INSERT OR IGNORE INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost)"
+                " VALUES(?,?,?,?,0)",
+                (a_id, co_id, val, dv_id),
+            )
+            cur.execute(
+                "UPDATE activity_allocations SET driver_amt=?, driver_value_id=? WHERE activity_id=? AND cost_object_id=?",
+                (val, dv_id, a_id, co_id),
+            )
 
     con.commit()
     con.close()
+    update_cost_object_costs()
+
+
+def insert_data():
+    """Load sample data from model.xlsx into the database."""
+    import os
+    sample_file = os.path.join(os.path.dirname(__file__), "model_new.xlsx")
+    if os.path.exists(sample_file):
+        try:
+            import_from_excel(sample_file)
+        except Exception as exc:  # pragma: no cover - show error if sample invalid
+            print(f"Failed to import {sample_file}: {exc}")
+    else:
+        print(f"Model file {sample_file} not found")
 
 
 def reset_all_tables() -> None:
@@ -371,20 +321,20 @@ def export_to_excel(file_path: str):
     df_activities = pd.DataFrame(
         acts, columns=["id", "name", "driver", "evenly"])
     # Cost Objects
-    cur.execute("SELECT id, name FROM cost_objects")
+    cur.execute("SELECT id, name, allocated_cost FROM cost_objects")
     cos = cur.fetchall()
-    df_costobj = pd.DataFrame(cos, columns=["id", "name"])
+    df_costobj = pd.DataFrame(cos, columns=["id", "name", "allocated_cost"])
     # Drivers
     cur.execute("SELECT id, name FROM drivers")
     dr = cur.fetchall()
     df_drivers = pd.DataFrame(dr, columns=["id", "name"])
     # Driver Values (with driver name)
-    cur.execute("""SELECT dv.id, d.name AS driver, dv.description, dv.value
+    cur.execute("""SELECT dv.id, d.name AS driver, dv.cost_object_nm, dv.value
                    FROM driver_values dv
                    JOIN drivers d ON dv.driver_id = d.id""")
     dvs = cur.fetchall()
     df_driver_vals = pd.DataFrame(
-        dvs, columns=["id", "driver", "description", "value"])
+        dvs, columns=["id", "driver", "cost_object_nm", "value"])
     # Resource Allocations (with resource and activity names)
     cur.execute("""SELECT r.id, r.name, a.id, a.name, ra.amount
                    FROM resource_allocations ra
@@ -393,17 +343,17 @@ def export_to_excel(file_path: str):
     ra = cur.fetchall()
     df_res_alloc = pd.DataFrame(ra, columns=[
                                 "resource_id", "resource_name", "activity_id", "activity_name", "amount"])
-    # Activity Allocations (with activity and cost_object names, and driver value description)
+    # Activity Allocations (with activity and cost_object names, and driver value name)
     cur.execute("""SELECT a.id, a.name, c.id, c.name,
-                          IFNULL(dv.description, '') AS driver_value,
-                          aa.quantity
+                          IFNULL(dv.cost_object_nm, '') AS driver_value,
+                          aa.driver_amt, aa.allocated_cost
                    FROM activity_allocations aa
                    JOIN activities a ON aa.activity_id = a.id
                    JOIN cost_objects c ON aa.cost_object_id = c.id
                    LEFT JOIN driver_values dv ON aa.driver_value_id = dv.id""")
     aa = cur.fetchall()
     df_act_alloc = pd.DataFrame(aa, columns=[
-                                "activity_id", "activity_name", "cost_object_id", "cost_object_name", "driver_value", "quantity"])
+                                "activity_id", "activity_name", "cost_object_id", "cost_object_name", "driver_value", "driver_amt", "allocated_cost"])
     con.close()
     # Write dataframes to an Excel file
     with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
@@ -444,7 +394,7 @@ def import_from_excel(file_path: str):
     # Clear existing data (like reset_all_tables)
     cur.execute("PRAGMA foreign_keys = OFF;")
     tables = [
-        "resource_allocations_monthly", "activity_allocations_monthly", "resource_costs",
+        "resource_costs",
         "resource_allocations", "activity_allocations",
         "resources", "activities", "cost_objects",
         "drivers", "driver_values"
@@ -554,8 +504,8 @@ def import_from_excel(file_path: str):
     # Import Driver Values
     for _, row in df_driver_vals.iterrows():
         driver_name = str(row["driver"]).strip()
-        desc = str(row["description"]).strip()
-        if not driver_name or not desc:
+        co_name = str(row["cost_object_nm"]).strip()
+        if not driver_name or not co_name:
             continue
         value = float(row["value"]) if pd.notna(row["value"]) else 0.0
         # Ensure driver exists (in case it was not in Drivers sheet but appears here)
@@ -567,16 +517,17 @@ def import_from_excel(file_path: str):
         if pd.notna(row.get("id")):
             dv_id = int(row["id"])
             cur.execute(
-                "INSERT OR IGNORE INTO driver_values(id, driver_id, description, value) VALUES(?, ?, ?, ?)",
-                (dv_id, d_id, desc, value)
+                "INSERT OR IGNORE INTO driver_values(id, driver_id, cost_object_nm, value) VALUES(?, ?, ?, ?)",
+                (dv_id, d_id, co_name, value)
             )
             cur.execute(
-                "UPDATE driver_values SET driver_id=?, description=?, value=? WHERE id=?",
-                (d_id, desc, value, dv_id)
+                "UPDATE driver_values SET driver_id=?, cost_object_nm=?, value=? WHERE id=?",
+                (d_id, co_name, value, dv_id)
             )
         else:
-            cur.execute("INSERT INTO driver_values(driver_id, description, value) VALUES(?, ?, ?)",
-                        (d_id, desc, value))
+            cur.execute(
+                "INSERT INTO driver_values(driver_id, cost_object_nm, value) VALUES(?, ?, ?)",
+                (d_id, co_name, value))
             # No need to store dv_id unless we want mapping for something later
 
     # Import Resource Allocations
@@ -624,7 +575,7 @@ def import_from_excel(file_path: str):
         a_name = str(row.get("activity_name", "")).strip()
         c_name = str(row.get("cost_object_name", "")).strip()
         drv_desc = str(row.get("driver_value", "")).strip()
-        qty = float(row["quantity"]) if pd.notna(row["quantity"]) else None
+        driver_amt = float(row.get("driver_amt", row.get("quantity", 0))) if pd.notna(row.get("driver_amt", row.get("quantity"))) else None
 
         # Lookup activity and cost object by name if IDs are missing
         if not a_id and a_name:
@@ -649,7 +600,7 @@ def import_from_excel(file_path: str):
         # Determine driver_value_id if applicable
         driver_value_id = None
         if drv_desc:
-            # If a driver value description is provided, find its ID (unique within driver)
+            # If a driver value name is provided, find its ID (unique within driver)
             # First, get the activity's driver_id to narrow search
             cur.execute(
                 "SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
@@ -657,62 +608,56 @@ def import_from_excel(file_path: str):
             act_driver_id = act_info[0] if act_info else None
             act_evenly = act_info[1] if act_info else 0
             if act_driver_id:
-                cur.execute("SELECT id FROM driver_values WHERE driver_id=? AND description=?",
+                cur.execute("SELECT id FROM driver_values WHERE driver_id=? AND cost_object_nm=?",
                             (act_driver_id, drv_desc))
                 val = cur.fetchone()
                 if val:
                     driver_value_id = val[0]
             if driver_value_id is None:
-                # Try find by description globally if unique
+                # Try find by name globally if unique
                 cur.execute(
-                    "SELECT id FROM driver_values WHERE description=?", (drv_desc,))
+                    "SELECT id FROM driver_values WHERE cost_object_nm=?", (drv_desc,))
                 vals = cur.fetchall()
                 if len(vals) == 1:
                     driver_value_id = vals[0][0]
-        # Determine quantity to store
-        qty_val = 0.0
+        # Determine driver amount to store
+        amt_val = 0.0
         cur.execute(
             "SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
         a_info = cur.fetchone()
         act_driver = a_info[0] if a_info else None
         act_evenly = a_info[1] if a_info else 0
         if act_evenly == 1:
-            qty_val = 1.0
+            amt_val = 1.0
             driver_value_id = None  # evenly distribution doesn't use driver values
         elif act_driver and driver_value_id:
             # lookup the actual numeric value for the driver value
             cur.execute("SELECT value FROM driver_values WHERE id=?",
                         (driver_value_id,))
             val = cur.fetchone()
-            qty_val = float(val[0]) if val else 0.0
+            amt_val = float(val[0]) if val else 0.0
         else:
             # manual quantity
-            qty_val = float(qty) if qty is not None else 0.0
+            amt_val = float(driver_amt) if driver_amt is not None else 0.0
 
         cur.execute(
-            "INSERT OR IGNORE INTO activity_allocations(activity_id, cost_object_id, quantity, driver_value_id) VALUES(?, ?, ?, ?)",
-            (a_id, c_id, qty_val, driver_value_id)
+            "INSERT OR IGNORE INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost) VALUES(?, ?, ?, ?, 0)",
+            (a_id, c_id, amt_val, driver_value_id)
         )
         cur.execute(
-            "UPDATE activity_allocations SET quantity=?, driver_value_id=? WHERE activity_id=? AND cost_object_id=?",
-            (qty_val, driver_value_id, a_id, c_id)
+            "UPDATE activity_allocations SET driver_amt=?, driver_value_id=? WHERE activity_id=? AND cost_object_id=?",
+            (amt_val, driver_value_id, a_id, c_id)
         )
 
     # Regenerate period-specific tables (resource_costs and monthly allocations)
-    cur.executescript("""
+    cur.executescript(
+        """
         DELETE FROM resource_costs;
         INSERT OR IGNORE INTO resource_costs(resource_id, period, cost)
             SELECT r.id, p.period, r.cost_total
             FROM resources r CROSS JOIN periods p;
-        DELETE FROM resource_allocations_monthly;
-        INSERT OR IGNORE INTO resource_allocations_monthly(resource_id, activity_id, period, amount)
-            SELECT ra.resource_id, ra.activity_id, p.period, ra.amount
-            FROM resource_allocations ra CROSS JOIN periods p;
-        DELETE FROM activity_allocations_monthly;
-        INSERT OR IGNORE INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity, driver_value_id)
-            SELECT aa.activity_id, aa.cost_object_id, p.period, aa.quantity, aa.driver_value_id
-            FROM activity_allocations aa CROSS JOIN periods p;
-    """)
+    """
+    )
     con.commit()
     con.close()
     update_activity_costs()

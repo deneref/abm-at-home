@@ -14,7 +14,7 @@ class CostObjectsPage(NSObject):
         self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = NSTableView.alloc().initWithFrame_(table_rect)
-        columns = [("id", 150), ("name", 200)]
+        columns = [("id", 150), ("name", 200), ("allocated_cost", 150)]
         for col_id, width in columns:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
@@ -60,6 +60,8 @@ class CostObjectsPage(NSObject):
             return str(self.rows[rowIndex][0])
         elif col_id == "name":
             return self.rows[rowIndex][1]
+        elif col_id == "allocated_cost":
+            return str(self.rows[rowIndex][2])
         return ""
 
     def tableViewSelectionDidChange_(self, notification):
@@ -119,7 +121,7 @@ class CostObjectsPage(NSObject):
     def refresh(self):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id, name FROM cost_objects")
+        cur.execute("SELECT id, name, allocated_cost FROM cost_objects")
         self.rows = cur.fetchall()
         con.close()
         self.tree.reloadData()

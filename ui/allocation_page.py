@@ -122,9 +122,9 @@ class AllocationPage(NSObject):
         self.__tuneCombo__(self.costobj_cb)
         second_section.addSubview_(self.costobj_cb)
 
-        desc_label = NSTextField.labelWithString_("Описание")
-        desc_label.setFrame_(NSMakeRect(875, 260, 60, 20))
-        second_section.addSubview_(desc_label)
+        # desc_label = NSTextField.labelWithString_("Описание")
+        # desc_label.setFrame_(NSMakeRect(875, 260, 60, 20))
+        # second_section.addSubview_(desc_label)
 
         self.driver_val_cb = NSComboBox.alloc().initWithFrame_(
             # wider combo box (for driver values)
@@ -134,9 +134,9 @@ class AllocationPage(NSObject):
         self.driver_val_cb.setEnabled_(False)
         second_section.addSubview_(self.driver_val_cb)
 
-        qty_label = NSTextField.labelWithString_("Объем")
-        qty_label.setFrame_(NSMakeRect(1150, 260, 50, 20))
-        second_section.addSubview_(qty_label)
+        # qty_label = NSTextField.labelWithString_("Объем")
+        # qty_label.setFrame_(NSMakeRect(1150, 260, 50, 20))
+        # second_section.addSubview_(qty_label)
 
         self.quantity_field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(1210, 255, 80, 25))
@@ -152,7 +152,7 @@ class AllocationPage(NSObject):
         # Table for Activity→CostObject allocations
         tree2_rect = NSMakeRect(0, 40, 1400, 180)
         self.tree_act_alloc = NSTableView.alloc().initWithFrame_(tree2_rect)
-        for col_id, col_label in [("activity", "Активность"), ("cost_object", "Объект"), ("quantity", "Объем")]:
+        for col_id, col_label in [("activity", "Активность"), ("cost_object", "Объект"), ("driver_amt", "Driver Amt"), ("allocated_cost", "Стоимость")]:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.headerCell().setStringValue_(col_label)
             self.tree_act_alloc.addTableColumn_(col)
@@ -215,8 +215,10 @@ class AllocationPage(NSObject):
                 return self.act_alloc_rows[rowIndex][0]
             elif col_id == "cost_object":
                 return self.act_alloc_rows[rowIndex][1]
-            elif col_id == "quantity":
+            elif col_id == "driver_amt":
                 return str(self.act_alloc_rows[rowIndex][2])
+            elif col_id == "allocated_cost":
+                return str(self.act_alloc_rows[rowIndex][3])
         return ""
 
     # ---------------- Handlers (Section 1) ---------------- #
@@ -240,18 +242,6 @@ class AllocationPage(NSObject):
             ON CONFLICT(resource_id, activity_id) DO UPDATE
             SET amount = excluded.amount
         """, (r_id, a_id, amt))
-        # Sync monthly allocations for all periods
-        cur.execute("""
-            UPDATE resource_allocations_monthly
-               SET amount = ?
-             WHERE resource_id = ? AND activity_id = ?
-        """, (amt, r_id, a_id))
-        if cur.rowcount == 0:
-            cur.execute("""
-                INSERT INTO resource_allocations_monthly(resource_id, activity_id, period, amount)
-                     SELECT ?, ?, period, ?
-                       FROM periods
-            """, (r_id, a_id, amt))
         con.commit()
         con.close()
         database.update_activity_costs()
@@ -272,8 +262,6 @@ class AllocationPage(NSObject):
         if r_id and a_id:
             cur.execute(
                 "DELETE FROM resource_allocations WHERE resource_id=? AND activity_id=?", (r_id, a_id))
-            cur.execute(
-                "DELETE FROM resource_allocations_monthly WHERE resource_id=? AND activity_id=?", (r_id, a_id))
             con.commit()
         con.close()
         database.update_activity_costs()
@@ -312,7 +300,7 @@ class AllocationPage(NSObject):
             self.__showError__("Выберите активность и объект")
             return
         driver_val_id = None
-        qty = None
+        amt = None
 
         con = database.get_connection()
         cur = con.cursor()
@@ -330,14 +318,14 @@ class AllocationPage(NSObject):
                 return
             cur.execute(
                 "SELECT value FROM driver_values WHERE id=?", (driver_val_id,))
-            qty = (cur.fetchone() or (None,))[0]
-            if qty is None:
+            amt = (cur.fetchone() or (None,))[0]
+            if amt is None:
                 con.close()
                 self.__showError__("Invalid driver value")
                 return
         else:                                    # Manual quantity input
             try:
-                qty = float(self.quantity_field.stringValue())
+                amt = float(self.quantity_field.stringValue())
             except ValueError:
                 con.close()
                 self.__showError__("Invalid quantity")
@@ -351,26 +339,17 @@ class AllocationPage(NSObject):
         if exists:  # update existing allocation
             cur2.execute("""
                 UPDATE activity_allocations
-                   SET quantity=?, driver_value_id=?
+                   SET driver_amt=?, driver_value_id=?
                  WHERE activity_id=? AND cost_object_id=?
-            """, (qty, driver_val_id, a_id, c_id))
-            cur2.execute("""
-                UPDATE activity_allocations_monthly
-                   SET quantity=?, driver_value_id=?
-                 WHERE activity_id=? AND cost_object_id=?
-            """, (qty, driver_val_id, a_id, c_id))
+            """, (amt, driver_val_id, a_id, c_id))
         else:       # add new allocation
             cur2.execute("""
-                INSERT INTO activity_allocations(activity_id, cost_object_id, quantity, driver_value_id)
-                VALUES(?,?,?,?)
-            """, (a_id, c_id, qty, driver_val_id))
-            cur2.execute("""
-                INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity, driver_value_id)
-                     SELECT ?, ?, period, ?, ?
-                       FROM periods
-            """, (a_id, c_id, qty, driver_val_id))
+                INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost)
+                VALUES(?,?,?,?,0)
+            """, (a_id, c_id, amt, driver_val_id))
         con.commit()
         con.close()
+        database.update_cost_object_costs()
         self.refresh()
 
     def deleteActAlloc_(self, sender):
@@ -387,10 +366,9 @@ class AllocationPage(NSObject):
         if a_id and c_id:
             cur.execute(
                 "DELETE FROM activity_allocations WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
-            cur.execute(
-                "DELETE FROM activity_allocations_monthly WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
             con.commit()
         con.close()
+        database.update_cost_object_costs()
         self.refresh()
 
     # ---------------- Refresh UI/Data ---------------- #
@@ -428,7 +406,7 @@ class AllocationPage(NSObject):
         """)
         self.res_alloc_rows = cur2.fetchall()
         cur2.execute("""
-            SELECT a.name, c.name, aa.quantity
+            SELECT a.name, c.name, aa.driver_amt, aa.allocated_cost
               FROM activity_allocations aa
               JOIN activities   a ON a.id = aa.activity_id
               JOIN cost_objects c ON c.id = aa.cost_object_id
@@ -456,7 +434,7 @@ class AllocationPage(NSObject):
             con = database.get_connection()
             cur = con.cursor()
             cur.execute(
-                "SELECT id, description FROM driver_values WHERE driver_id=?", (driver_id,))
+                "SELECT id, cost_object_nm FROM driver_values WHERE driver_id=?", (driver_id,))
             vals = [f"{row[0]}: {row[1]}" for row in cur.fetchall()]
             con.close()
             self.driver_val_cb.removeAllItems()
