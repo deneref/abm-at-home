@@ -135,6 +135,11 @@ def init_db():
         "activities",
         "allocated_cost REAL NOT NULL DEFAULT 0",
     )
+    # ensure activity allocations support driver values
+    add_column_if_missing(
+        "activity_allocations",
+        "driver_value_id INTEGER REFERENCES driver_values(id) ON DELETE RESTRICT",
+    )
 
     # ── миграция старого текстового driver ────────────────────────────────────
     cur.execute("PRAGMA table_info(activities)")
@@ -248,75 +253,16 @@ def update_even_allocations(activity_id: int, evenly: int) -> None:
 
 
 def insert_data():
-    con = get_connection()
-    cur = con.cursor()
-
-    # ── заполнение помесячных таблиц (идемпотентно) ──────────────────────────
-    cur.executescript(
-        """
-    delete from cost_objects;
-    INSERT OR IGNORE INTO cost_objects(name)
-        VALUES 
-        ("Кепка цветок-солнце Графит")
-        ,("Кепка цветок-солнце Маджента")
-        ,("Кепка цветок-солнце Бежевая")
-        ,("Кепка День Графит")
-        ,("Кепка День Маджента")
-        ,("Лонгслив Мартини")
-        ,("Лонгслив Камминг Белый")
-        ,("Лонгслив Камминг Розовый")
-        ,("Лонгслив Тайгер Белый")
-        ,("Лонгслив Тайгер Розовый")
-        ,("Худи Оливки")
-        ,("Худи Камминг Графит")
-        ,("Худи Камминг Синий")
-        ,("Худи Лаверс Графит")
-        ,("Худи Лаверс Синий")
-        ;
-
-        delete from drivers;
-        insert into drivers(name)
-        values("Отзывы Я.Маркет (кол-во)")
-        ,("Продано Я.Маркет (шт)")
-        ,("Постов instagram")
-        ;
-
-         -- данные на 11.07.2025
-         delete from resources;
-         INSERT OR IGNORE INTO resources(name, cost_total, unit)
-         values
-         ("Размещение на витрине Яндекс", 195830, "рубли")
-         ,("Продвижение Яндекс", 100.0, "рубли")
-         ,("Отзывы Яндекс Маркет", 15152, "рубли")
-         ,("Буст Яндекс Маркет", 29706, "рубли")
-         ,("Полки Яндекс Маркет ", 6403, "рубли")
-         ,("Доставка Яндекс Маркет ", 75420, "рубли")
-         ,("Перевод платежа Яндекс Маркет ", 19362, "рубли")
-         ,("Поставка (транзитный склад)", 5700, "рубли")
-         ,("Яся ФОТ", 70000, "рубли")
-         ,("Налог", 70000, "рубли")
-         ,("Стоимость кредита", 70000, "рубли")
-         ,("Займ родители Дани", 20000, "рубли")
-         ,("Займ родители Антона", 28000, "рубли")
-         ;
-
-         delete from activities;
-         INSERT OR IGNORE INTO activities(name, driver_id)
-         values("Получение отзывов X Яндекс Маркет", 1)
-         ,("Функционирование X Яндекс Маркет", 1)
-         ,("Функционирование X Оплата кредита", 1)
-         ,("Функционирование X Оплата займов", 1)
-         ,("Разработка X Дизайн", 1)
-         ,("Разработка X Пошив Пробников", 1)
-         ,("Производство X Упаковка", 1)
-         ,("Производство X Пошив", 1)
-         ,("Производство X Пошив", 1)
-        ;
-    """
-    )
-
-    con.commit()
-    con.close()
+    """Load sample data from model.xlsx into the database."""
+    import os
+    sample_file = os.path.join(os.path.dirname(__file__), "model.xlsx")
+    if os.path.exists(sample_file):
+        try:
+            import_from_excel(sample_file)
+        except Exception as exc:  # pragma: no cover - show error if sample invalid
+            print(f"Failed to import {sample_file}: {exc}")
+    else:
+        print(f"Model file {sample_file} not found")
 
 
 def reset_all_tables() -> None:
