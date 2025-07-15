@@ -69,18 +69,12 @@ class GraphPage(NSObject):
                     a_id, 0) + cost_contrib
                 resource_to_activity[(r_id, a_id)] = cost_contrib
         # Activity->CostObject allocations
-        cur.execute("SELECT aa.activity_id, aa.cost_object_id, aa.quantity, aa.driver_value_id, a.evenly, dv.value FROM activity_allocations_monthly aa JOIN activities a ON a.id = aa.activity_id LEFT JOIN driver_values dv ON dv.id = aa.driver_value_id WHERE aa.period=?", (period,))
+        cur.execute("SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations_monthly WHERE period=?", (period,))
         act_alloc = {}
         total_by_act = {}
-        for a_id, c_id, qty, drv_id, evenly, drv_val in cur.fetchall():
-            if evenly == 1:
-                eff_qty = 1.0
-            elif drv_id is not None and drv_val is not None:
-                eff_qty = drv_val
-            else:
-                eff_qty = qty
-            act_alloc.setdefault(a_id, {})[c_id] = eff_qty
-            total_by_act[a_id] = total_by_act.get(a_id, 0) + eff_qty
+        for a_id, c_id, amt in cur.fetchall():
+            act_alloc.setdefault(a_id, {})[c_id] = amt
+            total_by_act[a_id] = total_by_act.get(a_id, 0) + amt
         cost_object_totals = {}
         activity_to_costobj = {}
         for a_id, cost in activity_costs.items():

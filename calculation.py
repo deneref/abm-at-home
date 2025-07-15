@@ -38,23 +38,13 @@ def calculate_costs(conn, period=None):
 
         # Step 2 – calculate cost object totals for the period
         cur.execute(
-            "SELECT aa.activity_id, aa.cost_object_id, aa.quantity, aa.driver_value_id, a.evenly, dv.value "
-            "FROM activity_allocations_monthly aa "
-            "JOIN activities a ON a.id = aa.activity_id "
-            "LEFT JOIN driver_values dv ON dv.id = aa.driver_value_id "
-            "WHERE aa.period=?", (period_code,))
+            "SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations_monthly WHERE period=?",
+            (period_code,))
         act_alloc = {}
         total_by_activity = {}
-        for a_id, c_id, qty, drv_id, evenly, drv_val in cur.fetchall():
-            # Determine effective quantity based on driver/evenly
-            if evenly == 1:
-                eff_qty = 1.0
-            elif drv_id is not None and drv_val is not None:
-                eff_qty = drv_val
-            else:
-                eff_qty = qty
-            act_alloc.setdefault(a_id, {})[c_id] = eff_qty
-            total_by_activity[a_id] = total_by_activity.get(a_id, 0) + eff_qty
+        for a_id, c_id, amt in cur.fetchall():
+            act_alloc.setdefault(a_id, {})[c_id] = amt
+            total_by_activity[a_id] = total_by_activity.get(a_id, 0) + amt
 
         cost_object_totals = {}
         breakdown = {}
@@ -95,12 +85,12 @@ def calculate_costs(conn, period=None):
 
     # Шаг 2 – стоимость объектов затрат (без учета периодов)
     cur.execute(
-        "SELECT activity_id, cost_object_id, quantity FROM activity_allocations")
+        "SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations")
     act_alloc = {}
     total_by_activity = {}
-    for a_id, c_id, qty in cur.fetchall():
-        act_alloc.setdefault(a_id, {})[c_id] = qty
-        total_by_activity[a_id] = total_by_activity.get(a_id, 0) + qty
+    for a_id, c_id, amt in cur.fetchall():
+        act_alloc.setdefault(a_id, {})[c_id] = amt
+        total_by_activity[a_id] = total_by_activity.get(a_id, 0) + amt
 
     cost_object_totals = {}
     breakdown = {}

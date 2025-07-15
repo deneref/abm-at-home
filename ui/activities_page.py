@@ -73,6 +73,12 @@ class ActivitiesPage(NSObject):
         self.refresh()
         return self
 
+    def parse_id(self, value):
+        try:
+            return int(value.split(":")[0]) if value else None
+        except Exception:
+            return None
+
     def numberOfRowsInTableView_(self, tableView):
         return len(self.rows) if hasattr(self, 'rows') else 0
 
@@ -96,7 +102,7 @@ class ActivitiesPage(NSObject):
         if row < 0 or row >= len(self.rows):
             return
         selected = self.rows[row]
-        # selected structure: (id, name, driver_name, evenly_flag, allocated_cost)
+        # selected structure: (id, name, driver_name, evenly_flag, allocated_cost, driver_id)
         self.name_field.setStringValue_(selected[1])
         if selected[3] == 1:  # evenly
             self.evenly_cb.setState_(1)
@@ -105,14 +111,16 @@ class ActivitiesPage(NSObject):
         else:
             self.evenly_cb.setState_(0)
             self.driver_cb.setEnabled_(True)
-            self.driver_cb.setStringValue_(selected[2] or "")
+            drv_id = selected[5]
+            drv_name = selected[2] or ""
+            self.driver_cb.setStringValue_(f"{drv_id}: {drv_name}" if drv_id else "")
         # Note: we do not auto-select driver combo item here; just display name text
 
     def save_(self, sender):
         name = self.name_field.stringValue().strip()
-        driver_name = self.driver_cb.stringValue().strip()
+        driver_str = self.driver_cb.stringValue().strip()
         evenly_flag = int(self.evenly_cb.state())
-        if not name or (not driver_name and evenly_flag == 0):
+        if not name or (not driver_str and evenly_flag == 0):
             alert = NSAlert.alloc().init()
             alert.setMessageText_("Error")
             alert.setInformativeText_("Fill all fields")
@@ -122,13 +130,7 @@ class ActivitiesPage(NSObject):
         # Determine driver_id for given driver name (unless evenly)
         driver_id = None
         if evenly_flag == 0:
-            # Find driver_id by name
-            con = database.get_connection()
-            cur = con.cursor()
-            cur.execute("SELECT id FROM drivers WHERE name=?", (driver_name,))
-            row = cur.fetchone()
-            driver_id = row[0] if row else None
-            con.close()
+            driver_id = self.parse_id(driver_str)
             if driver_id is None:
                 # If driver not found (should not happen if selection made)
                 alert = NSAlert.alloc().init()
@@ -157,6 +159,7 @@ class ActivitiesPage(NSObject):
         con.commit()
         con.close()
         database.update_even_allocations(a_id, evenly_flag)
+        database.apply_driver_values()
         self.refresh()
         self.clear_form()
 
@@ -202,7 +205,8 @@ class ActivitiesPage(NSObject):
         cur.execute("""SELECT a.id, a.name,
                               CASE WHEN a.evenly=1 THEN 'Evenly' ELSE IFNULL(d.name, '') END AS driver_name,
                               a.evenly,
-                              a.allocated_cost
+                              a.allocated_cost,
+                              a.driver_id
                        FROM activities a
                        LEFT JOIN drivers d ON a.driver_id = d.id""")
         self.rows = cur.fetchall()
