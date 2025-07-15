@@ -458,7 +458,7 @@ class AllocationPage(NSObject):
             con = database.get_connection()
             cur = con.cursor()
             cur.execute(
-                "SELECT id, description FROM driver_values WHERE driver_id=?", (driver_id,))
+                "SELECT id, cost_object_nm FROM driver_values WHERE driver_id=?", (driver_id,))
             vals = [f"{row[0]}: {row[1]}" for row in cur.fetchall()]
             con.close()
             self.driver_val_cb.removeAllItems()
