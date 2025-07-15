@@ -1,10 +1,11 @@
 import objc
-from Cocoa import NSObject, NSApplication, NSApp, NSWindow, NSTabView, NSTabViewItem, NSMakeRect
+from Cocoa import NSObject, NSApplication, NSApp, NSWindow, NSTabView, NSTabViewItem, NSMakeRect, NSMenu, NSMenuItem
 from AppKit import (
     NSWindowStyleMaskTitled, NSWindowStyleMaskClosable, NSWindowStyleMaskResizable,
     NSWindowStyleMaskMiniaturizable, NSBackingStoreBuffered,
     NSViewWidthSizable, NSViewHeightSizable,
-    NSViewMinYMargin, NSViewMaxXMargin          # ← добавили NSViewMaxXMargin
+    NSViewMinYMargin, NSViewMaxXMargin,
+    NSOpenPanel, NSSavePanel, NSAlert
 )
 from ui.resources_page import ResourcesPage
 from ui.activities_page import ActivitiesPage
@@ -45,6 +46,29 @@ class MainWindow(NSObject):
             rect, style_mask, NSBackingStoreBuffered, False
         )
         self.window.setTitle_("ABM Manager")
+
+        # --------- Menu bar ---------
+        main_menu = NSMenu.alloc().init()
+        app_item = NSMenuItem.alloc().init()
+        main_menu.addItem_(app_item)
+        app_menu = NSMenu.alloc().initWithTitle_("Application")
+        quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Quit", "terminate:", "q")
+        app_menu.addItem_(quit_item)
+        app_item.setSubmenu_(app_menu)
+
+        file_item = NSMenuItem.alloc().init()
+        main_menu.addItem_(file_item)
+        file_menu = NSMenu.alloc().initWithTitle_("File")
+        import_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Import...", "importExcel:", "")
+        export_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Export...", "exportExcel:", "")
+        file_menu.addItem_(import_item)
+        file_menu.addItem_(export_item)
+        file_item.setSubmenu_(file_menu)
+
+        NSApp().setMainMenu_(main_menu)
 
         # Контейнер для выпадающего списка и вкладок
         content_view = objc.lookUpClass("NSView").alloc().initWithFrame_(rect)
@@ -217,3 +241,47 @@ class MainWindow(NSObject):
         ):
             if hasattr(page, "refresh"):
                 page.refresh()
+
+    # ==================== Import/Export ====================
+    def importExcel_(self, sender):
+        panel = NSOpenPanel.openPanel()
+        panel.setAllowedFileTypes_(
+            ["xlsx"])
+        if panel.runModal():
+            file_path = str(panel.URL().path())
+            try:
+                database.import_from_excel(file_path)
+                self.refresh_all_pages()
+            except Exception as exc:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_("Error")
+                alert.setInformativeText_(str(exc))
+                alert.runModal()
+
+    def exportExcel_(self, sender):
+        panel = NSSavePanel.savePanel()
+        panel.setAllowedFileTypes_(["xlsx"])
+        if panel.runModal():
+            file_path = str(panel.URL().path())
+            try:
+                database.export_to_excel(file_path)
+            except Exception as exc:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_("Error")
+                alert.setInformativeText_(str(exc))
+                alert.runModal()
+
+    def refresh_all_pages(self):
+        for page in (
+            self.resourcesPage,
+            self.activitiesPage,
+            self.driversPage,
+            self.costObjectsPage,
+            self.allocationPage,
+            self.analysisPage,
+            self.visualizationPage,
+            self.graphPage,
+        ):
+            if hasattr(page, "refresh"):
+                page.refresh()
+
