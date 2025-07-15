@@ -131,6 +131,7 @@ class ResourcesPage(NSObject):
                 "INSERT INTO resource_costs(resource_id, period, cost) SELECT ?, period, ? FROM periods", (rid, cost))
         con.commit()
         con.close()
+        database.update_activity_costs()
         self.refresh()
         self.clear_form()
 
@@ -157,6 +158,7 @@ class ResourcesPage(NSObject):
             cur.execute("DELETE FROM resources WHERE id=?", (rid,))
             con.commit()
             con.close()
+            database.update_activity_costs()
             self.refresh()
             self.clear_form()
 
