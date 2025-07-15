@@ -188,6 +188,29 @@ def update_cost_object_costs() -> None:
     con.close()
 
 
+def get_resources_with_unallocated(period: str | None = None):
+    """Return list of resources with their unallocated cost for the given period."""
+    period_code = period if period is not None else current_period
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """SELECT r.id, r.name,
+                  COALESCE(rc.cost, r.cost_total) AS cost_val,
+                  r.unit,
+                  COALESCE(rc.cost, r.cost_total) - COALESCE(
+                        (SELECT SUM(amount) FROM resource_allocations ra WHERE ra.resource_id=r.id),
+                        0
+                  ) AS unallocated_cost
+           FROM resources r
+           LEFT JOIN resource_costs rc
+             ON r.id = rc.resource_id AND rc.period=?""",
+        (period_code,)
+    )
+    rows = cur.fetchall()
+    con.close()
+    return rows
+
+
 def update_even_allocations(activity_id: int, evenly: int) -> None:
     """Create or remove cost object allocations for an activity based on
     its evenly flag."""
