@@ -242,18 +242,6 @@ class AllocationPage(NSObject):
             ON CONFLICT(resource_id, activity_id) DO UPDATE
             SET amount = excluded.amount
         """, (r_id, a_id, amt))
-        # Sync monthly allocations for all periods
-        cur.execute("""
-            UPDATE resource_allocations_monthly
-               SET amount = ?
-             WHERE resource_id = ? AND activity_id = ?
-        """, (amt, r_id, a_id))
-        if cur.rowcount == 0:
-            cur.execute("""
-                INSERT INTO resource_allocations_monthly(resource_id, activity_id, period, amount)
-                     SELECT ?, ?, period, ?
-                       FROM periods
-            """, (r_id, a_id, amt))
         con.commit()
         con.close()
         database.update_activity_costs()
@@ -274,8 +262,6 @@ class AllocationPage(NSObject):
         if r_id and a_id:
             cur.execute(
                 "DELETE FROM resource_allocations WHERE resource_id=? AND activity_id=?", (r_id, a_id))
-            cur.execute(
-                "DELETE FROM resource_allocations_monthly WHERE resource_id=? AND activity_id=?", (r_id, a_id))
             con.commit()
         con.close()
         database.update_activity_costs()
@@ -356,20 +342,10 @@ class AllocationPage(NSObject):
                    SET driver_amt=?, driver_value_id=?
                  WHERE activity_id=? AND cost_object_id=?
             """, (amt, driver_val_id, a_id, c_id))
-            cur2.execute("""
-                UPDATE activity_allocations_monthly
-                   SET driver_amt=?, driver_value_id=?
-                 WHERE activity_id=? AND cost_object_id=?
-            """, (amt, driver_val_id, a_id, c_id))
         else:       # add new allocation
             cur2.execute("""
                 INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost)
                 VALUES(?,?,?,?,0)
-            """, (a_id, c_id, amt, driver_val_id))
-            cur2.execute("""
-                INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, driver_amt, driver_value_id, allocated_cost)
-                     SELECT ?, ?, period, ?, ?, 0
-                       FROM periods
             """, (a_id, c_id, amt, driver_val_id))
         con.commit()
         con.close()
@@ -390,8 +366,6 @@ class AllocationPage(NSObject):
         if a_id and c_id:
             cur.execute(
                 "DELETE FROM activity_allocations WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
-            cur.execute(
-                "DELETE FROM activity_allocations_monthly WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
             con.commit()
         con.close()
         database.update_cost_object_costs()
