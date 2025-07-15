@@ -1,5 +1,4 @@
 import sqlite3
-from contextlib import contextmanager
 import pandas as pd
 
 DB_NAME = "abm_data.db"
@@ -17,13 +16,6 @@ def init_db():
     con = get_connection()
     cur = con.cursor()
 
-    # ── вспомогательная функция ────────────────────────────────────────────────
-    def add_column_if_missing(table: str, col_def: str) -> None:
-        col_name = col_def.split()[0]
-        cur.execute(f"PRAGMA table_info({table})")
-        if col_name not in [row[1] for row in cur.fetchall()]:
-            cur.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
-
     # ── базовые таблицы ────────────────────────────────────────────────────────
     cur.executescript(
         """
@@ -37,12 +29,15 @@ def init_db():
     CREATE TABLE IF NOT EXISTS activities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        driver TEXT                        -- временно, для миграции
+        driver_id INTEGER REFERENCES drivers(id) ON DELETE RESTRICT,
+        evenly INTEGER NOT NULL DEFAULT 0,
+        allocated_cost REAL NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS cost_objects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        allocated_cost REAL NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS resource_allocations (
@@ -58,9 +53,11 @@ def init_db():
         activity_id INTEGER NOT NULL,
         cost_object_id INTEGER NOT NULL,
         quantity REAL NOT NULL,
+        driver_value_id INTEGER,
         PRIMARY KEY (activity_id, cost_object_id),
         FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE,
-        FOREIGN KEY (cost_object_id) REFERENCES cost_objects(id) ON DELETE CASCADE
+        FOREIGN KEY (cost_object_id) REFERENCES cost_objects(id) ON DELETE CASCADE,
+        FOREIGN KEY (driver_value_id) REFERENCES driver_values(id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS drivers (
@@ -122,52 +119,6 @@ def init_db():
     )
     con.commit()
 
-    # ── новые столбцы в activities ────────────────────────────────────────────
-    add_column_if_missing(
-        "activities",
-        "driver_id INTEGER REFERENCES drivers(id) ON DELETE RESTRICT",
-    )
-    add_column_if_missing(
-        "activities",
-        "evenly INTEGER NOT NULL DEFAULT 0",
-    )
-    add_column_if_missing(
-        "activities",
-        "allocated_cost REAL NOT NULL DEFAULT 0",
-    )
-    # ensure activity allocations support driver values
-    add_column_if_missing(
-        "activity_allocations",
-        "driver_value_id INTEGER REFERENCES driver_values(id) ON DELETE RESTRICT",
-    )
-
-    # ── миграция старого текстового driver ────────────────────────────────────
-    cur.execute("PRAGMA table_info(activities)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "driver" in columns:
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO drivers(name)
-                SELECT DISTINCT driver FROM activities
-                WHERE driver IS NOT NULL
-            """
-        )
-        cur.execute(
-            """
-            UPDATE activities
-               SET driver_id = (
-                    SELECT id FROM drivers
-                     WHERE name = activities.driver
-               )
-             WHERE driver IS NOT NULL
-            """
-        )
-        try:
-            cur.execute("ALTER TABLE activities DROP COLUMN driver")
-        except sqlite3.OperationalError:
-            # если SQLite старее 3.35, DROP COLUMN недоступен
-            pass
-
     # ── заполнение помесячных таблиц (идемпотентно) ──────────────────────────
     cur.executescript(
         """
@@ -181,8 +132,8 @@ def init_db():
           FROM resource_allocations ra
                CROSS JOIN periods p;
 
-    INSERT OR IGNORE INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity)
-        SELECT aa.activity_id, aa.cost_object_id, p.period, aa.quantity
+    INSERT OR IGNORE INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity, driver_value_id)
+        SELECT aa.activity_id, aa.cost_object_id, p.period, aa.quantity, aa.driver_value_id
           FROM activity_allocations aa
                CROSS JOIN periods p;
     """
@@ -219,6 +170,35 @@ def update_activity_costs() -> None:
     )
     con.commit()
     con.close()
+    update_cost_object_costs()
+
+
+def update_cost_object_costs() -> None:
+    """Recalculate allocated cost for each cost object based on activity allocations."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+        WITH totals AS (
+            SELECT activity_id, SUM(quantity) AS total_qty
+              FROM activity_allocations
+             GROUP BY activity_id
+        )
+        UPDATE cost_objects
+           SET allocated_cost = COALESCE((
+                SELECT SUM(
+                           CASE WHEN totals.total_qty > 0
+                                THEN a.allocated_cost * aa.quantity / totals.total_qty
+                                ELSE 0 END)
+                  FROM activity_allocations aa
+                  JOIN activities a ON a.id = aa.activity_id
+                  JOIN totals ON totals.activity_id = aa.activity_id
+                 WHERE aa.cost_object_id = cost_objects.id
+           ), 0)
+        """
+    )
+    con.commit()
+    con.close()
 
 
 def update_even_allocations(activity_id: int, evenly: int) -> None:
@@ -240,12 +220,12 @@ def update_even_allocations(activity_id: int, evenly: int) -> None:
         periods = [row[0] for row in cur.fetchall()]
         for co_id in cost_objects:
             cur.execute(
-                "INSERT INTO activity_allocations(activity_id, cost_object_id, quantity) VALUES (?, ?, 1)",
+                "INSERT INTO activity_allocations(activity_id, cost_object_id, quantity, driver_value_id) VALUES (?, ?, 1, NULL)",
                 (activity_id, co_id),
             )
             for p in periods:
                 cur.execute(
-                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity) VALUES (?, ?, ?, 1)",
+                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity, driver_value_id) VALUES (?, ?, ?, 1, NULL)",
                     (activity_id, co_id, p),
                 )
     con.commit()
@@ -317,9 +297,9 @@ def export_to_excel(file_path: str):
     df_activities = pd.DataFrame(
         acts, columns=["id", "name", "driver", "evenly"])
     # Cost Objects
-    cur.execute("SELECT id, name FROM cost_objects")
+    cur.execute("SELECT id, name, allocated_cost FROM cost_objects")
     cos = cur.fetchall()
-    df_costobj = pd.DataFrame(cos, columns=["id", "name"])
+    df_costobj = pd.DataFrame(cos, columns=["id", "name", "allocated_cost"])
     # Drivers
     cur.execute("SELECT id, name FROM drivers")
     dr = cur.fetchall()

@@ -371,6 +371,7 @@ class AllocationPage(NSObject):
             """, (a_id, c_id, qty, driver_val_id))
         con.commit()
         con.close()
+        database.update_cost_object_costs()
         self.refresh()
 
     def deleteActAlloc_(self, sender):
@@ -391,6 +392,7 @@ class AllocationPage(NSObject):
                 "DELETE FROM activity_allocations_monthly WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
             con.commit()
         con.close()
+        database.update_cost_object_costs()
         self.refresh()
 
     # ---------------- Refresh UI/Data ---------------- #
