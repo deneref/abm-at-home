@@ -95,60 +95,92 @@ class GraphPage(NSObject):
         cur.execute("SELECT id, name FROM cost_objects")
         all_costobjs = {row[0]: row[1] for row in cur.fetchall()}
         con.close()
-        # Build graph nodes and edges
+
+        # Build graph nodes and edges (using networkx)
         G = nx.Graph()
         node_labels = {}
         node_colors = []
-        # Resources nodes
+        edge_labels = {}
+
+        # Add Resource nodes (prefix "R")
         for r_id, data in resource_data.items():
             if data["cost"] is None:
                 continue
-            # Include even if cost is 0 (for completeness)
             node = f"R{r_id}"
             G.add_node(node)
             node_labels[node] = f"R: {data['name']}\n{data['cost']:.2f}"
-            node_colors.append("#FF6666")  # red
-        # Activity nodes
+            node_colors.append("#FF6666")  # red for resources
+
+        # Add Activity nodes (prefix "A")
         for a_id, cost in activity_costs.items():
             node = f"A{a_id}"
             G.add_node(node)
             name = all_activities.get(a_id, str(a_id))
             node_labels[node] = f"A: {name}\n{cost:.2f}"
-            node_colors.append("#FFCC33")  # orange
-        # Cost object nodes
+            node_colors.append("#FFCC33")  # orange for activities
+
+        # Add Cost Object nodes (prefix "O")
         for c_id, total in cost_object_totals.items():
             node = f"O{c_id}"
             G.add_node(node)
             name = all_costobjs.get(c_id, str(c_id))
             node_labels[node] = f"O: {name}\n{total:.2f}"
-            node_colors.append("#99CC66")  # green
-        # Edges from resource to activity
-        edge_labels = {}
+            node_colors.append("#99CC66")  # green for cost objects
+
+        # Add edges Resource→Activity
         for (r_id, a_id), value in resource_to_activity.items():
             res_node = f"R{r_id}"
             act_node = f"A{a_id}"
-            if not G.has_node(res_node) or not G.has_node(act_node):
-                continue
-            G.add_edge(res_node, act_node)
-            edge_labels[(res_node, act_node)] = f"{value:.2f}"
-        # Edges from activity to cost object
+            if G.has_node(res_node) and G.has_node(act_node):
+                G.add_edge(res_node, act_node)
+                edge_labels[(res_node, act_node)] = f"{value:.2f}"
+
+        # Add edges Activity→CostObject
         for (a_id, c_id), value in activity_to_costobj.items():
             act_node = f"A{a_id}"
             co_node = f"O{c_id}"
-            if not G.has_node(act_node) or not G.has_node(co_node):
-                continue
-            G.add_edge(act_node, co_node)
-            edge_labels[(act_node, co_node)] = f"{value:.2f}"
-        # Compute force-directed layout for graph
-        pos = nx.spring_layout(G, seed=42)
-        # Draw graph using matplotlib
+            if G.has_node(act_node) and G.has_node(co_node):
+                G.add_edge(act_node, co_node)
+                edge_labels[(act_node, co_node)] = f"{value:.2f}"
+
+        # If no activities have cost (graph is empty), nothing to draw
+        if not activity_costs:
+            con.close()
+            return
+
+        con.close()
+
+        # ---- New layered layout: three columns (Resources, Activities, CostObjects) ----
+        pos = {}
+        # Get sorted lists of nodes by type
+        R_nodes = sorted(
+            [n for n in G.nodes if n.startswith("R")], key=lambda x: int(x[1:]))
+        A_nodes = sorted(
+            [n for n in G.nodes if n.startswith("A")], key=lambda x: int(x[1:]))
+        O_nodes = sorted(
+            [n for n in G.nodes if n.startswith("O")], key=lambda x: int(x[1:]))
+        nR, nA, nO = len(R_nodes), len(A_nodes), len(O_nodes)
+        # Assign X positions for layers: 0.1 (left), 0.5 (middle), 0.9 (right)
+        for i, node in enumerate(R_nodes):
+            # Evenly spaced Y positions (top=1.0, bottom=0.0)
+            y = 1 - ((i + 1) / (nR + 1)) if nR > 0 else 0.5
+            pos[node] = (0.1, y)
+        for i, node in enumerate(A_nodes):
+            y = 1 - ((i + 1) / (nA + 1)) if nA > 0 else 0.5
+            pos[node] = (0.5, y)
+        for i, node in enumerate(O_nodes):
+            y = 1 - ((i + 1) / (nO + 1)) if nO > 0 else 0.5
+            pos[node] = (0.9, y)
+
+        # Draw the graph using Matplotlib
         fig = Figure(figsize=(10, 6), dpi=100)
         ax = fig.add_subplot(111)
         nx.draw(G, pos, ax=ax, labels=node_labels, node_color=node_colors,
                 with_labels=True, arrows=False, font_size=9)
         nx.draw_networkx_edge_labels(
             G, pos, ax=ax, edge_labels=edge_labels, font_size=8)
-        # Convert to NSImage for display
+
+        # Convert plot to NSImage for display in the UI
         buf = io.BytesIO()
         fig.savefig(buf, format="png")
         img_data = buf.getvalue()
