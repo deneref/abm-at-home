@@ -254,6 +254,7 @@ class AllocationPage(NSObject):
             """, (r_id, a_id, amt))
         con.commit()
         con.close()
+        database.update_activity_costs()
         self.refresh()
 
     def deleteResAlloc_(self, sender):
@@ -275,6 +276,7 @@ class AllocationPage(NSObject):
                 "DELETE FROM resource_allocations_monthly WHERE resource_id=? AND activity_id=?", (r_id, a_id))
             con.commit()
         con.close()
+        database.update_activity_costs()
         self.refresh()
 
     # ------------- Show remaining cost on resource selection ------------- #

@@ -131,6 +131,10 @@ def init_db():
         "activities",
         "evenly INTEGER NOT NULL DEFAULT 0",
     )
+    add_column_if_missing(
+        "activities",
+        "allocated_cost REAL NOT NULL DEFAULT 0",
+    )
 
     # ── миграция старого текстового driver ────────────────────────────────────
     cur.execute("PRAGMA table_info(activities)")
@@ -179,6 +183,66 @@ def init_db():
     """
     )
 
+    con.commit()
+    con.close()
+    update_activity_costs()
+
+
+def update_activity_costs() -> None:
+    """Recalculate allocated cost for each activity based on current resource allocations."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+        WITH totals AS (
+            SELECT resource_id, SUM(amount) AS total_amt
+              FROM resource_allocations
+             GROUP BY resource_id
+        )
+        UPDATE activities
+           SET allocated_cost = COALESCE((
+                SELECT SUM(
+                           CASE WHEN totals.total_amt > 0
+                                THEN r.cost_total * ra.amount / totals.total_amt
+                                ELSE 0 END)
+                  FROM resource_allocations ra
+                  JOIN resources r ON r.id = ra.resource_id
+                  JOIN totals ON totals.resource_id = ra.resource_id
+                 WHERE ra.activity_id = activities.id
+           ), 0)
+        """
+    )
+    con.commit()
+    con.close()
+
+
+def update_even_allocations(activity_id: int, evenly: int) -> None:
+    """Create or remove cost object allocations for an activity based on
+    its evenly flag."""
+    con = get_connection()
+    cur = con.cursor()
+    # Remove existing allocations
+    cur.execute("DELETE FROM activity_allocations WHERE activity_id=?",
+                (activity_id,))
+    cur.execute(
+        "DELETE FROM activity_allocations_monthly WHERE activity_id=?",
+        (activity_id,))
+    if evenly:
+        # Even distribution -> allocate quantity=1 to each cost object
+        cur.execute("SELECT id FROM cost_objects")
+        cost_objects = [row[0] for row in cur.fetchall()]
+        cur.execute("SELECT period FROM periods")
+        periods = [row[0] for row in cur.fetchall()]
+        for co_id in cost_objects:
+            cur.execute(
+                "INSERT INTO activity_allocations(activity_id, cost_object_id, quantity) VALUES (?, ?, 1)",
+                (activity_id, co_id),
+            )
+            for p in periods:
+                cur.execute(
+                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, quantity) VALUES (?, ?, ?, 1)",
+                    (activity_id, co_id, p),
+                )
     con.commit()
     con.close()
 
@@ -651,3 +715,4 @@ def import_from_excel(file_path: str):
     """)
     con.commit()
     con.close()
+    update_activity_costs()
