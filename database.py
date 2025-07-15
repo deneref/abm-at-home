@@ -94,50 +94,16 @@ def init_db():
         FOREIGN KEY(period) REFERENCES periods(period) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS resource_allocations_monthly (
-        resource_id INTEGER NOT NULL,
-        activity_id INTEGER NOT NULL,
-        period TEXT NOT NULL,
-        amount REAL NOT NULL,
-        PRIMARY KEY(resource_id, activity_id, period),
-        FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE,
-        FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
-        FOREIGN KEY(period) REFERENCES periods(period) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS activity_allocations_monthly (
-        activity_id INTEGER NOT NULL,
-        cost_object_id INTEGER NOT NULL,
-        period TEXT NOT NULL,
-        driver_amt INTEGER NOT NULL,
-        driver_value_id INTEGER,
-        allocated_cost REAL NOT NULL DEFAULT 0,
-        PRIMARY KEY(activity_id, cost_object_id, period),
-        FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE,
-        FOREIGN KEY(cost_object_id) REFERENCES cost_objects(id) ON DELETE CASCADE,
-        FOREIGN KEY(driver_value_id) REFERENCES driver_values(id) ON DELETE RESTRICT,
-        FOREIGN KEY(period) REFERENCES periods(period) ON DELETE CASCADE
-    );
     """
     )
     con.commit()
 
-    # ── заполнение помесячных таблиц (идемпотентно) ──────────────────────────
+    # ── заполнение периодических таблиц (идемпотентно) ───────────────────────
     cur.executescript(
         """
     INSERT OR IGNORE INTO resource_costs(resource_id, period, cost)
         SELECT r.id, p.period, r.cost_total
           FROM resources r
-               CROSS JOIN periods p;
-
-    INSERT OR IGNORE INTO resource_allocations_monthly(resource_id, activity_id, period, amount)
-        SELECT ra.resource_id, ra.activity_id, p.period, ra.amount
-          FROM resource_allocations ra
-               CROSS JOIN periods p;
-
-    INSERT OR IGNORE INTO activity_allocations_monthly(activity_id, cost_object_id, period, driver_amt, driver_value_id, allocated_cost)
-        SELECT aa.activity_id, aa.cost_object_id, p.period, aa.driver_amt, aa.driver_value_id, aa.allocated_cost
-          FROM activity_allocations aa
                CROSS JOIN periods p;
     """
     )
@@ -228,27 +194,19 @@ def update_even_allocations(activity_id: int, evenly: int) -> None:
     con = get_connection()
     cur = con.cursor()
     # Remove existing allocations
-    cur.execute("DELETE FROM activity_allocations WHERE activity_id=?",
-                (activity_id,))
     cur.execute(
-        "DELETE FROM activity_allocations_monthly WHERE activity_id=?",
-        (activity_id,))
+        "DELETE FROM activity_allocations WHERE activity_id=?",
+        (activity_id,),
+    )
     if evenly:
         # Even distribution -> allocate driver_amt=1 to each cost object
         cur.execute("SELECT id FROM cost_objects")
         cost_objects = [row[0] for row in cur.fetchall()]
-        cur.execute("SELECT period FROM periods")
-        periods = [row[0] for row in cur.fetchall()]
         for co_id in cost_objects:
             cur.execute(
                 "INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost) VALUES (?, ?, 1, NULL, 0)",
                 (activity_id, co_id),
             )
-            for p in periods:
-                cur.execute(
-                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, driver_amt, driver_value_id, allocated_cost) VALUES (?, ?, ?, 1, NULL, 0)",
-                    (activity_id, co_id, p),
-                )
     con.commit()
     con.close()
 
@@ -292,17 +250,6 @@ def apply_driver_values(dv_ids: list[int] | None = None) -> None:
                 "UPDATE activity_allocations SET driver_amt=?, driver_value_id=? WHERE activity_id=? AND cost_object_id=?",
                 (val, dv_id, a_id, co_id),
             )
-            cur.execute(
-                "UPDATE activity_allocations_monthly SET driver_amt=?, driver_value_id=?"
-                " WHERE activity_id=? AND cost_object_id=?",
-                (val, dv_id, a_id, co_id),
-            )
-            if cur.rowcount == 0:
-                cur.execute(
-                    "INSERT INTO activity_allocations_monthly(activity_id, cost_object_id, period, driver_amt, driver_value_id, allocated_cost)"
-                    " SELECT ?, ?, period, ?, ?, 0 FROM periods",
-                    (a_id, co_id, val, dv_id),
-                )
 
     con.commit()
     con.close()
@@ -447,7 +394,7 @@ def import_from_excel(file_path: str):
     # Clear existing data (like reset_all_tables)
     cur.execute("PRAGMA foreign_keys = OFF;")
     tables = [
-        "resource_allocations_monthly", "activity_allocations_monthly", "resource_costs",
+        "resource_costs",
         "resource_allocations", "activity_allocations",
         "resources", "activities", "cost_objects",
         "drivers", "driver_values"
@@ -703,20 +650,14 @@ def import_from_excel(file_path: str):
         )
 
     # Regenerate period-specific tables (resource_costs and monthly allocations)
-    cur.executescript("""
+    cur.executescript(
+        """
         DELETE FROM resource_costs;
         INSERT OR IGNORE INTO resource_costs(resource_id, period, cost)
             SELECT r.id, p.period, r.cost_total
             FROM resources r CROSS JOIN periods p;
-        DELETE FROM resource_allocations_monthly;
-        INSERT OR IGNORE INTO resource_allocations_monthly(resource_id, activity_id, period, amount)
-            SELECT ra.resource_id, ra.activity_id, p.period, ra.amount
-            FROM resource_allocations ra CROSS JOIN periods p;
-        DELETE FROM activity_allocations_monthly;
-        INSERT OR IGNORE INTO activity_allocations_monthly(activity_id, cost_object_id, period, driver_amt, driver_value_id, allocated_cost)
-            SELECT aa.activity_id, aa.cost_object_id, p.period, aa.driver_amt, aa.driver_value_id, aa.allocated_cost
-            FROM activity_allocations aa CROSS JOIN periods p;
-    """)
+    """
+    )
     con.commit()
     con.close()
     update_activity_costs()

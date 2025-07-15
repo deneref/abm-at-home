@@ -50,7 +50,8 @@ class GraphPage(NSObject):
                          for row in cur.fetchall()}
         # Resource->Activity allocations
         cur.execute(
-            "SELECT resource_id, activity_id, amount FROM resource_allocations_monthly WHERE period=?", (period,))
+            "SELECT resource_id, activity_id, amount FROM resource_allocations"
+        )
         res_alloc = {}
         total_by_res = {}
         for r_id, a_id, amount in cur.fetchall():
@@ -69,7 +70,9 @@ class GraphPage(NSObject):
                     a_id, 0) + cost_contrib
                 resource_to_activity[(r_id, a_id)] = cost_contrib
         # Activity->CostObject allocations
-        cur.execute("SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations_monthly WHERE period=?", (period,))
+        cur.execute(
+            "SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations"
+        )
         act_alloc = {}
         total_by_act = {}
         for a_id, c_id, amt in cur.fetchall():

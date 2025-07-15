@@ -18,8 +18,8 @@ def calculate_costs(conn, period=None):
             "ON r.id = rc.resource_id AND rc.period=?", (period_code,))
         resources = {row[0]: row[1] for row in cur.fetchall()}
         cur.execute(
-            "SELECT resource_id, activity_id, amount FROM resource_allocations_monthly "
-            "WHERE period=?", (period_code,))
+            "SELECT resource_id, activity_id, amount FROM resource_allocations"
+        )
         res_alloc = {}
         total_by_resource = {}
         for r_id, a_id, amount in cur.fetchall():
@@ -38,8 +38,8 @@ def calculate_costs(conn, period=None):
 
         # Step 2 – calculate cost object totals for the period
         cur.execute(
-            "SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations_monthly WHERE period=?",
-            (period_code,))
+            "SELECT activity_id, cost_object_id, driver_amt FROM activity_allocations"
+        )
         act_alloc = {}
         total_by_activity = {}
         for a_id, c_id, amt in cur.fetchall():
