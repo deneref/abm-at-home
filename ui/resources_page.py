@@ -17,7 +17,8 @@ class ResourcesPage(NSObject):
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = NSTableView.alloc().initWithFrame_(table_rect)
         columns = [("id", 120), ("name", 120),
-                   ("cost_total", 120), ("unit", 120)]
+                   ("cost_total", 120), ("unallocated_cost", 150),
+                   ("unit", 120)]
         for col_id, width in columns:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
@@ -76,6 +77,8 @@ class ResourcesPage(NSObject):
             return self.rows[rowIndex][1]
         elif col_id == "cost_total":
             return str(self.rows[rowIndex][2])
+        elif col_id == "unallocated_cost":
+            return str(self.rows[rowIndex][4])
         elif col_id == "unit":
             return self.rows[rowIndex][3]
         return ""
@@ -163,15 +166,6 @@ class ResourcesPage(NSObject):
             self.clear_form()
 
     def refresh(self):
-        con = database.get_connection()
-        cur = con.cursor()
-        # Fetch resource data for current period costs
-        cur.execute("""SELECT r.id, r.name, 
-                              COALESCE(rc.cost, r.cost_total) AS cost_val, 
-                              r.unit 
-                       FROM resources r 
-                       LEFT JOIN resource_costs rc 
-                         ON r.id = rc.resource_id AND rc.period=?""", (database.current_period,))
-        self.rows = cur.fetchall()
-        con.close()
+        # Obtain rows including the computed unallocated cost
+        self.rows = database.get_resources_with_unallocated(database.current_period)
         self.tree.reloadData()
