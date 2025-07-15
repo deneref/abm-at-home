@@ -255,7 +255,7 @@ def update_even_allocations(activity_id: int, evenly: int) -> None:
 def insert_data():
     """Load sample data from model.xlsx into the database."""
     import os
-    sample_file = os.path.join(os.path.dirname(__file__), "model.xlsx")
+    sample_file = os.path.join(os.path.dirname(__file__), "model_new.xlsx")
     if os.path.exists(sample_file):
         try:
             import_from_excel(sample_file)
