@@ -31,15 +31,15 @@ def test_allocation_cost_split():
     # create driver and cost objects
     cur.execute("INSERT INTO drivers(name) VALUES('drv')")
     driver_id = cur.lastrowid
-    cur.execute("INSERT INTO cost_objects(name) VALUES('o1')")
+    cur.execute("INSERT INTO cost_objects(product,business_procces) VALUES('p1','bp1')")
     co1 = cur.lastrowid
-    cur.execute("INSERT INTO cost_objects(name) VALUES('o2')")
+    cur.execute("INSERT INTO cost_objects(product,business_procces) VALUES('p2','bp1')")
     co2 = cur.lastrowid
-    cur.execute("INSERT INTO driver_values(driver_id,cost_object_nm,value) VALUES(?,?,?)", (driver_id,'o1',2))
-    cur.execute("INSERT INTO driver_values(driver_id,cost_object_nm,value) VALUES(?,?,?)", (driver_id,'o2',1))
+    cur.execute("INSERT INTO driver_values(driver_id,product,value) VALUES(?,?,?)", (driver_id,'p1',2))
+    cur.execute("INSERT INTO driver_values(driver_id,product,value) VALUES(?,?,?)", (driver_id,'p2',1))
     cur.execute("INSERT INTO resources(name,cost_total,unit) VALUES('res',100,'u')")
     res_id = cur.lastrowid
-    cur.execute("INSERT INTO activities(name,driver_id,evenly) VALUES('act',?,0)", (driver_id,))
+    cur.execute("INSERT INTO activities(business_procces,activity,driver_id,evenly) VALUES('bp1','act',?,0)", (driver_id,))
     act_id = cur.lastrowid
     cur.execute("INSERT INTO resource_allocations(resource_id,activity_id,amount) VALUES(?,?,1)", (res_id, act_id))
     con.commit()
@@ -73,9 +73,9 @@ def test_unallocated_cost_calculation():
     cur = con.cursor()
     cur.execute("INSERT INTO resources(name,cost_total,unit) VALUES('r1',200,'u')")
     r_id = cur.lastrowid
-    cur.execute("INSERT INTO activities(name,driver_id,evenly) VALUES('a1',NULL,0)")
+    cur.execute("INSERT INTO activities(business_procces,activity,driver_id,evenly) VALUES('bp','a1',NULL,0)")
     a1 = cur.lastrowid
-    cur.execute("INSERT INTO activities(name,driver_id,evenly) VALUES('a2',NULL,0)")
+    cur.execute("INSERT INTO activities(business_procces,activity,driver_id,evenly) VALUES('bp','a2',NULL,0)")
     a2 = cur.lastrowid
     con.commit()
     con.close()

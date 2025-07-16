@@ -70,7 +70,7 @@ class DriversPage(NSObject):
         # Table of driver values
         table2_rect = NSMakeRect(0, 30, 1000, 250)
         self.value_table = NSTableView.alloc().initWithFrame_(table2_rect)
-        for col_id, width in [("id", 120), ("cost_object_nm", 300), ("value", 100)]:
+        for col_id, width in [("id", 120), ("product", 300), ("value", 100)]:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
             col.headerCell().setStringValue_(col_id)
@@ -134,7 +134,7 @@ class DriversPage(NSObject):
         elif tableView == self.value_table:
             if col_id == "id":
                 return str(self.value_rows[rowIndex][0])
-            elif col_id == "cost_object_nm":
+            elif col_id == "product":
                 return self.value_rows[rowIndex][1]
             elif col_id == "value":
                 return str(self.value_rows[rowIndex][2])
@@ -166,7 +166,7 @@ class DriversPage(NSObject):
             con = database.get_connection()
             cur = con.cursor()
             cur.execute(
-                "SELECT id, cost_object_nm, value FROM driver_values WHERE driver_id=?", (d_id,))
+                "SELECT id, product, value FROM driver_values WHERE driver_id=?", (d_id,))
             self.value_rows = cur.fetchall()
             con.close()
             self.value_table.reloadData()
@@ -178,7 +178,7 @@ class DriversPage(NSObject):
             if row < 0 or row >= len(self.value_rows):
                 return
             selected = self.value_rows[row]
-            # selected = (id, cost_object_nm, value)
+            # selected = (id, product, value)
             self.desc_field.setStringValue_(selected[1])
             self.val_field.setStringValue_(str(selected[2]))
 
@@ -282,10 +282,10 @@ class DriversPage(NSObject):
             row = self.value_table.selectedRow()
             val_id = self.value_rows[row][0]
             cur.execute(
-                "UPDATE driver_values SET cost_object_nm=?, value=? WHERE id=?", (co_name, val, val_id))
+                "UPDATE driver_values SET product=?, value=? WHERE id=?", (co_name, val, val_id))
         else:
             # Insert new driver value for current driver
-            cur.execute("INSERT INTO driver_values(driver_id, cost_object_nm, value) VALUES(?, ?, ?)",
+            cur.execute("INSERT INTO driver_values(driver_id, product, value) VALUES(?, ?, ?)",
                         (self.current_driver_id, co_name, val))
             val_id = cur.lastrowid
         try:
@@ -306,7 +306,7 @@ class DriversPage(NSObject):
             con2 = database.get_connection()
             cur2 = con2.cursor()
             cur2.execute(
-                "SELECT id, cost_object_nm, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
+                "SELECT id, product, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
             self.value_rows = cur2.fetchall()
             con2.close()
             self.value_table.reloadData()
@@ -347,7 +347,7 @@ class DriversPage(NSObject):
             con2 = database.get_connection()
             cur2 = con2.cursor()
             cur2.execute(
-                "SELECT id, cost_object_nm, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
+                "SELECT id, product, value FROM driver_values WHERE driver_id=?", (self.current_driver_id,))
             self.value_rows = cur2.fetchall()
             con2.close()
             self.value_table.reloadData()
