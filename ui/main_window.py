@@ -15,6 +15,7 @@ from ui.analysis_page import AnalysisPage
 from ui.visualization_page import VisualizationPage
 from ui.drivers_page import DriversPage
 from ui.graph_page import GraphPage
+from ui.produced_amounts_window import ProducedAmountsWindow
 import database
 
 
@@ -64,8 +65,11 @@ class MainWindow(NSObject):
             "Import...", "importExcel:", "")
         export_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Export...", "exportExcel:", "")
+        prod_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Configure Produced Amounts", "openProdAmounts:", "")
         file_menu.addItem_(import_item)
         file_menu.addItem_(export_item)
+        file_menu.addItem_(prod_item)
         file_item.setSubmenu_(file_menu)
 
         NSApp().setMainMenu_(main_menu)
@@ -270,6 +274,13 @@ class MainWindow(NSObject):
                 alert.setMessageText_("Error")
                 alert.setInformativeText_(str(exc))
                 alert.runModal()
+
+    def openProdAmounts_(self, sender):
+        if not hasattr(self, "_prodAmtWin") or self._prodAmtWin is None:
+            self._prodAmtWin = ProducedAmountsWindow.alloc().init()
+            self._prodAmtWin.refresh_callback = self.costObjectsPage.refresh
+            self._prodAmtWin.on_close = lambda: setattr(self, "_prodAmtWin", None)
+        self._prodAmtWin.show()
 
     def refresh_all_pages(self):
         for page in (

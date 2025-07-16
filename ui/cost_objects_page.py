@@ -2,6 +2,7 @@ import objc
 from Cocoa import NSObject, NSMakeRect
 from AppKit import NSView, NSTextField, NSButton, NSScrollView, NSTableView, NSTableColumn, NSAlert
 from AppKit import NSViewWidthSizable, NSViewHeightSizable, NSViewMaxYMargin
+import math
 import database
 
 class CostObjectsPage(NSObject):
@@ -14,7 +15,7 @@ class CostObjectsPage(NSObject):
         self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = NSTableView.alloc().initWithFrame_(table_rect)
-        columns = [("id", 150), ("name", 200), ("allocated_cost", 150)]
+        columns = [("id", 150), ("name", 200), ("allocated_cost", 150), ("unit_cost", 150)]
         for col_id, width in columns:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
@@ -67,7 +68,11 @@ class CostObjectsPage(NSObject):
         elif col_id == "name":
             return self.rows[rowIndex][1]
         elif col_id == "allocated_cost":
-            return str(self.rows[rowIndex][2])
+            val = self.rows[rowIndex][2]
+            return str(math.ceil(val)) if val is not None else "0"
+        elif col_id == "unit_cost":
+            val = self.rows[rowIndex][3]
+            return f"{val:.2f}" if val is not None else ""
         return ""
 
     def tableViewSelectionDidChange_(self, notification):
@@ -142,8 +147,15 @@ class CostObjectsPage(NSObject):
         con = database.get_connection()
         cur = con.cursor()
         cur.execute(
-            "SELECT id, product || ' X ' || business_procces AS name, allocated_cost FROM cost_objects"
+            "SELECT c.id, c.product || ' X ' || c.business_procces AS name,"
+            "       c.allocated_cost, pa.amount"
+            "  FROM cost_objects c"
+            "  LEFT JOIN produced_amounts pa ON pa.product = c.product"
         )
-        self.rows = cur.fetchall()
+        rows = cur.fetchall()
+        self.rows = []
+        for cid, name, alloc, amt in rows:
+            unit = alloc / amt if amt and amt != 0 else None
+            self.rows.append((cid, name, alloc, unit))
         con.close()
         self.tree.reloadData()

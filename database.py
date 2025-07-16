@@ -78,6 +78,11 @@ def init_db():
         UNIQUE(driver_id, product)
     );
 
+    CREATE TABLE IF NOT EXISTS produced_amounts (
+        product TEXT PRIMARY KEY,
+        amount REAL NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS periods (
         period TEXT PRIMARY KEY
     );
@@ -213,6 +218,41 @@ def get_resources_with_unallocated(period: str | None = None):
     return rows
 
 
+def set_produced_amount(product: str, amount: float) -> None:
+    """Insert or update produced amount for a given product."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "INSERT INTO produced_amounts(product, amount) VALUES(?, ?) "
+        "ON CONFLICT(product) DO UPDATE SET amount=excluded.amount",
+        (product, amount),
+    )
+    con.commit()
+    con.close()
+
+
+def get_produced_amount(product: str) -> float | None:
+    """Return produced amount for the product if exists."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT amount FROM produced_amounts WHERE product=?", (product,)
+    )
+    row = cur.fetchone()
+    con.close()
+    return row[0] if row else None
+
+
+def get_all_produced_amounts():
+    """Return list of (product, amount) for all produced amounts."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute("SELECT product, amount FROM produced_amounts")
+    rows = cur.fetchall()
+    con.close()
+    return rows
+
+
 def update_even_allocations(activity_id: int, evenly: int) -> None:
     """Create or remove cost object allocations for an activity based on
     its evenly flag."""
@@ -332,7 +372,7 @@ def reset_all_tables() -> None:
 def export_to_excel(file_path: str):
     """
     Export all model data to an Excel file with multiple sheets.
-    Sheets: Resources, Activities, CostObjects, Drivers, DriverValues, ResourceAllocations, ActivityAllocations.
+    Sheets: Resources, Activities, CostObjects, Drivers, DriverValues, ResourceAllocations, ActivityAllocations, ProducedAmounts (optional).
     """
     con = get_connection()
     cur = con.cursor()
@@ -388,6 +428,10 @@ def export_to_excel(file_path: str):
                                 "activity_id", "business_procces", "activity",
                                 "cost_object_id", "product", "cost_object_bp",
                                 "driver_value", "driver_amt", "allocated_cost"])
+    # Produced amounts
+    cur.execute("SELECT product, amount FROM produced_amounts")
+    pa = cur.fetchall()
+    df_prod_amt = pd.DataFrame(pa, columns=["product", "amount"])
     con.close()
     # Write dataframes to an Excel file
     with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
@@ -400,6 +444,8 @@ def export_to_excel(file_path: str):
             writer, sheet_name="ResourceAllocations", index=False)
         df_act_alloc.to_excel(
             writer, sheet_name="ActivityAllocations", index=False)
+        df_prod_amt.to_excel(
+            writer, sheet_name="ProducedAmounts", index=False)
 
 
 def import_from_excel(file_path: str):
@@ -422,6 +468,10 @@ def import_from_excel(file_path: str):
     df_driver_vals = pd.read_excel(xls, "DriverValues")
     df_res_alloc = pd.read_excel(xls, "ResourceAllocations")
     df_act_alloc = pd.read_excel(xls, "ActivityAllocations")
+    if "ProducedAmounts" in xls.sheet_names:
+        df_prod_amt = pd.read_excel(xls, "ProducedAmounts")
+    else:
+        df_prod_amt = pd.DataFrame(columns=["product", "amount"])
 
     con = get_connection()
     cur = con.cursor()
@@ -431,7 +481,7 @@ def import_from_excel(file_path: str):
         "resource_costs",
         "resource_allocations", "activity_allocations",
         "resources", "activities", "cost_objects",
-        "drivers", "driver_values"
+        "drivers", "driver_values", "produced_amounts"
     ]
     for t in tables:
         cur.execute(f'DELETE FROM "{t}";')
@@ -539,6 +589,18 @@ def import_from_excel(file_path: str):
                         (product, bproc))
             c_id = cur.lastrowid
         costobj_map[(product, bproc)] = c_id
+
+    # Import Produced Amounts
+    for _, row in df_prod_amt.iterrows():
+        product = str(row.get("product", "")).strip()
+        if not product:
+            continue
+        amount = float(row.get("amount", 0)) if pd.notna(row.get("amount")) else 0.0
+        cur.execute(
+            "INSERT INTO produced_amounts(product, amount) VALUES(?, ?) "
+            "ON CONFLICT(product) DO UPDATE SET amount=excluded.amount",
+            (product, amount),
+        )
 
     # Import Driver Values
     for _, row in df_driver_vals.iterrows():
