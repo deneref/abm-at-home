@@ -96,9 +96,13 @@ class GraphPage(NSObject):
             con.close()
             return
         # Fetch names for activities and cost objects
-        cur.execute("SELECT id, name FROM activities")
+        cur.execute(
+            "SELECT id, business_procces || ' X ' || activity AS name FROM activities"
+        )
         all_activities = {row[0]: row[1] for row in cur.fetchall()}
-        cur.execute("SELECT id, name FROM cost_objects")
+        cur.execute(
+            "SELECT id, product || ' X ' || business_procces AS name FROM cost_objects"
+        )
         all_costobjs = {row[0]: row[1] for row in cur.fetchall()}
         con.close()
 
