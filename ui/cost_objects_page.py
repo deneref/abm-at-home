@@ -51,6 +51,12 @@ class CostObjectsPage(NSObject):
         self.refresh()
         return self
 
+    def parse_costobj_name(self, text: str):
+        if "X" not in text:
+            return None, None
+        prod, bproc = text.split("X", 1)
+        return prod.strip(), bproc.strip()
+
     def numberOfRowsInTableView_(self, tableView):
         return len(self.rows) if hasattr(self, 'rows') else 0
 
@@ -82,14 +88,28 @@ class CostObjectsPage(NSObject):
             alert.addButtonWithTitle_("OK")
             alert.runModal()
             return
+        product, bproc = self.parse_costobj_name(name)
+        if not product or not bproc:
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Error")
+            alert.setInformativeText_("Use format 'product X business'" )
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
         con = database.get_connection()
         cur = con.cursor()
         if self.tree.numberOfSelectedRows() > 0:
             row = self.tree.selectedRow()
             co_id = self.rows[row][0]
-            cur.execute("UPDATE cost_objects SET name=? WHERE id=?", (name, co_id))
+            cur.execute(
+                "UPDATE cost_objects SET product=?, business_procces=? WHERE id=?",
+                (product, bproc, co_id),
+            )
         else:
-            cur.execute("INSERT INTO cost_objects(name) VALUES(?)", (name,))
+            cur.execute(
+                "INSERT INTO cost_objects(product, business_procces) VALUES(?, ?)",
+                (product, bproc),
+            )
         con.commit()
         con.close()
         self.refresh()
@@ -121,7 +141,9 @@ class CostObjectsPage(NSObject):
     def refresh(self):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id, name, allocated_cost FROM cost_objects")
+        cur.execute(
+            "SELECT id, product || ' X ' || business_procces AS name, allocated_cost FROM cost_objects"
+        )
         self.rows = cur.fetchall()
         con.close()
         self.tree.reloadData()

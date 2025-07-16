@@ -62,7 +62,9 @@ class VisualizationPage(NSObject):
         costobj_totals = totals  # {cost_object_id: value}
         con2 = database.get_connection()
         cur2 = con2.cursor()
-        cur2.execute("SELECT id, name FROM cost_objects")
+        cur2.execute(
+            "SELECT id, product || ' X ' || business_procces AS name FROM cost_objects"
+        )
         all_costobjs = {row[0]: row[1] for row in cur2.fetchall()}
         con2.close()
         labels1 = []
@@ -77,7 +79,9 @@ class VisualizationPage(NSObject):
                 activity_totals[a_id] = activity_totals.get(a_id, 0) + value
         con3 = database.get_connection()
         cur3 = con3.cursor()
-        cur3.execute("SELECT id, name FROM activities")
+        cur3.execute(
+            "SELECT id, business_procces || ' X ' || activity AS name FROM activities"
+        )
         all_activities = {row[0]: row[1] for row in cur3.fetchall()}
         con3.close()
         labels2 = []

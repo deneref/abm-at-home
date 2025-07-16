@@ -79,6 +79,13 @@ class ActivitiesPage(NSObject):
         except Exception:
             return None
 
+    def parse_activity_name(self, text: str):
+        """Split combined name into business process and activity."""
+        if "X" not in text:
+            return None, None
+        bproc, act = text.split("X", 1)
+        return bproc.strip(), act.strip()
+
     def numberOfRowsInTableView_(self, tableView):
         return len(self.rows) if hasattr(self, 'rows') else 0
 
@@ -127,6 +134,14 @@ class ActivitiesPage(NSObject):
             alert.addButtonWithTitle_("OK")
             alert.runModal()
             return
+        bproc, act_name = self.parse_activity_name(name)
+        if not bproc or not act_name:
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Error")
+            alert.setInformativeText_("Use format 'bp X activity'")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
         # Determine driver_id for given driver name (unless evenly)
         driver_id = None
         if evenly_flag == 0:
@@ -146,14 +161,14 @@ class ActivitiesPage(NSObject):
             row = self.tree.selectedRow()
             a_id = self.rows[row][0]
             cur.execute(
-                "UPDATE activities SET name=?, driver_id=?, evenly=? WHERE id=?",
-                (name, driver_id if not evenly_flag else None, evenly_flag, a_id),
+                "UPDATE activities SET business_procces=?, activity=?, driver_id=?, evenly=? WHERE id=?",
+                (bproc, act_name, driver_id if not evenly_flag else None, evenly_flag, a_id),
             )
         else:
             # Insert new activity
             cur.execute(
-                "INSERT INTO activities (name, driver_id, evenly) VALUES (?, ?, ?)",
-                (name, driver_id if not evenly_flag else None, evenly_flag),
+                "INSERT INTO activities (business_procces, activity, driver_id, evenly) VALUES (?, ?, ?, ?)",
+                (bproc, act_name, driver_id if not evenly_flag else None, evenly_flag),
             )
             a_id = cur.lastrowid
         con.commit()
@@ -202,13 +217,16 @@ class ActivitiesPage(NSObject):
         con = database.get_connection()
         cur = con.cursor()
         # Fetch activities with driver names and evenly flag
-        cur.execute("""SELECT a.id, a.name,
-                              CASE WHEN a.evenly=1 THEN 'Evenly' ELSE IFNULL(d.name, '') END AS driver_name,
-                              a.evenly,
-                              a.allocated_cost,
-                              a.driver_id
-                       FROM activities a
-                       LEFT JOIN drivers d ON a.driver_id = d.id""")
+        cur.execute(
+            """SELECT a.id,
+                      a.business_procces || ' X ' || a.activity AS name,
+                      CASE WHEN a.evenly=1 THEN 'Evenly' ELSE IFNULL(d.name, '') END AS driver_name,
+                      a.evenly,
+                      a.allocated_cost,
+                      a.driver_id
+                 FROM activities a
+                 LEFT JOIN drivers d ON a.driver_id = d.id"""
+        )
         self.rows = cur.fetchall()
         # Populate driver list for combo box
         cur.execute("SELECT id, name FROM drivers")
