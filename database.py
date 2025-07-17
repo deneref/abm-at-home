@@ -2,7 +2,8 @@ import sqlite3
 import pandas as pd
 
 DB_NAME = "abm_data.db"
-current_period = None  # Currently selected period (YYYY-MM)
+# Default to the first period; can be changed by the UI
+current_period = "2025-01"
 
 
 def get_connection():
