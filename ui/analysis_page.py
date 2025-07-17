@@ -55,7 +55,9 @@ class AnalysisPage(NSObject):
     def refresh(self):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id, name FROM cost_objects")
+        cur.execute(
+            "SELECT id, product || ' X ' || business_procces AS name FROM cost_objects"
+        )
         self.objs = cur.fetchall()
         con.close()
         values = [f"{o[0]}: {o[1]}" for o in self.objs]
@@ -102,7 +104,10 @@ class AnalysisPage(NSObject):
     def get_activity_name(self, act_id):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT name FROM activities WHERE id=?", (act_id,))
+        cur.execute(
+            "SELECT business_procces || ' X ' || activity FROM activities WHERE id=?",
+            (act_id,),
+        )
         row = cur.fetchone()
         con.close()
         return row[0] if row else str(act_id)

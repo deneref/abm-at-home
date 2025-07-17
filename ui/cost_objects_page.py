@@ -2,6 +2,7 @@ import objc
 from Cocoa import NSObject, NSMakeRect
 from AppKit import NSView, NSTextField, NSButton, NSScrollView, NSTableView, NSTableColumn, NSAlert
 from AppKit import NSViewWidthSizable, NSViewHeightSizable, NSViewMaxYMargin
+import math
 import database
 
 class CostObjectsPage(NSObject):
@@ -14,7 +15,7 @@ class CostObjectsPage(NSObject):
         self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = NSTableView.alloc().initWithFrame_(table_rect)
-        columns = [("id", 150), ("name", 200), ("allocated_cost", 150)]
+        columns = [("id", 150), ("name", 200), ("allocated_cost", 150), ("unit_cost", 150)]
         for col_id, width in columns:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
             col.setWidth_(width)
@@ -51,6 +52,12 @@ class CostObjectsPage(NSObject):
         self.refresh()
         return self
 
+    def parse_costobj_name(self, text: str):
+        if "X" not in text:
+            return None, None
+        prod, bproc = text.split("X", 1)
+        return prod.strip(), bproc.strip()
+
     def numberOfRowsInTableView_(self, tableView):
         return len(self.rows) if hasattr(self, 'rows') else 0
 
@@ -61,7 +68,11 @@ class CostObjectsPage(NSObject):
         elif col_id == "name":
             return self.rows[rowIndex][1]
         elif col_id == "allocated_cost":
-            return str(self.rows[rowIndex][2])
+            val = self.rows[rowIndex][2]
+            return str(math.ceil(val)) if val is not None else "0"
+        elif col_id == "unit_cost":
+            val = self.rows[rowIndex][3]
+            return f"{val:.2f}" if val is not None else ""
         return ""
 
     def tableViewSelectionDidChange_(self, notification):
@@ -82,14 +93,28 @@ class CostObjectsPage(NSObject):
             alert.addButtonWithTitle_("OK")
             alert.runModal()
             return
+        product, bproc = self.parse_costobj_name(name)
+        if not product or not bproc:
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Error")
+            alert.setInformativeText_("Use format 'product X business'" )
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
         con = database.get_connection()
         cur = con.cursor()
         if self.tree.numberOfSelectedRows() > 0:
             row = self.tree.selectedRow()
             co_id = self.rows[row][0]
-            cur.execute("UPDATE cost_objects SET name=? WHERE id=?", (name, co_id))
+            cur.execute(
+                "UPDATE cost_objects SET product=?, business_procces=? WHERE id=?",
+                (product, bproc, co_id),
+            )
         else:
-            cur.execute("INSERT INTO cost_objects(name) VALUES(?)", (name,))
+            cur.execute(
+                "INSERT INTO cost_objects(product, business_procces) VALUES(?, ?)",
+                (product, bproc),
+            )
         con.commit()
         con.close()
         self.refresh()
@@ -121,7 +146,16 @@ class CostObjectsPage(NSObject):
     def refresh(self):
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id, name, allocated_cost FROM cost_objects")
-        self.rows = cur.fetchall()
+        cur.execute(
+            "SELECT c.id, c.product || ' X ' || c.business_procces AS name,"
+            "       c.allocated_cost, pa.amount"
+            "  FROM cost_objects c"
+            "  LEFT JOIN produced_amounts pa ON pa.product = c.product"
+        )
+        rows = cur.fetchall()
+        self.rows = []
+        for cid, name, alloc, amt in rows:
+            unit = alloc / amt if amt and amt != 0 else None
+            self.rows.append((cid, name, alloc, unit))
         con.close()
         self.tree.reloadData()

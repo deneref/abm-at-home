@@ -257,8 +257,15 @@ class AllocationPage(NSObject):
         # Find IDs by name
         cur.execute("SELECT id FROM resources WHERE name=?", (r_name,))
         r_id = (cur.fetchone() or (None,))[0]
-        cur.execute("SELECT id FROM activities WHERE name=?", (a_name,))
-        a_id = (cur.fetchone() or (None,))[0]
+        bproc, act = self.parse_activity_name(a_name)
+        if bproc and act:
+            cur.execute(
+                "SELECT id FROM activities WHERE business_procces=? AND activity=?",
+                (bproc, act),
+            )
+            a_id = (cur.fetchone() or (None,))[0]
+        else:
+            a_id = None
         if r_id and a_id:
             cur.execute(
                 "DELETE FROM resource_allocations WHERE resource_id=? AND activity_id=?", (r_id, a_id))
@@ -359,10 +366,24 @@ class AllocationPage(NSObject):
         a_name, c_name, _ = self.act_alloc_rows[sel]
         con = database.get_connection()
         cur = con.cursor()
-        cur.execute("SELECT id FROM activities WHERE name=?", (a_name,))
-        a_id = (cur.fetchone() or (None,))[0]
-        cur.execute("SELECT id FROM cost_objects WHERE name=?", (c_name,))
-        c_id = (cur.fetchone() or (None,))[0]
+        bproc, act = self.parse_activity_name(a_name)
+        if bproc and act:
+            cur.execute(
+                "SELECT id FROM activities WHERE business_procces=? AND activity=?",
+                (bproc, act),
+            )
+            a_id = (cur.fetchone() or (None,))[0]
+        else:
+            a_id = None
+        prod, cbp = self.parse_costobj_name(c_name)
+        if prod and cbp:
+            cur.execute(
+                "SELECT id FROM cost_objects WHERE product=? AND business_procces=?",
+                (prod, cbp),
+            )
+            c_id = (cur.fetchone() or (None,))[0]
+        else:
+            c_id = None
         if a_id and c_id:
             cur.execute(
                 "DELETE FROM activity_allocations WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
@@ -378,11 +399,15 @@ class AllocationPage(NSObject):
         cur = con.cursor()
         cur.execute("SELECT id, name FROM resources")
         res_list = [f"{r[0]}: {r[1]}" for r in cur.fetchall()]
-        cur.execute("SELECT id, name, driver_id, evenly FROM activities")
+        cur.execute(
+            "SELECT id, business_procces || ' X ' || activity AS name, driver_id, evenly FROM activities"
+        )
         acts = cur.fetchall()
         acts_list = [f"{a[0]}: {a[1]}" for a in acts]
         self.activities_info = {a[0]: (a[2], a[3]) for a in acts}
-        cur.execute("SELECT id, name FROM cost_objects")
+        cur.execute(
+            "SELECT id, product || ' X ' || business_procces AS name FROM cost_objects"
+        )
         objs_list = [f"{o[0]}: {o[1]}" for o in cur.fetchall()]
         con.close()
 
@@ -398,19 +423,23 @@ class AllocationPage(NSObject):
         # Refresh tables
         con2 = database.get_connection()
         cur2 = con2.cursor()
-        cur2.execute("""
-            SELECT r.name, a.name, ra.amount
-              FROM resource_allocations ra
-              JOIN resources  r ON r.id = ra.resource_id
-              JOIN activities a ON a.id = ra.activity_id
-        """)
+        cur2.execute(
+            """SELECT r.name,
+                      a.business_procces || ' X ' || a.activity AS act_name,
+                      ra.amount
+                 FROM resource_allocations ra
+                 JOIN resources  r ON r.id = ra.resource_id
+                 JOIN activities a ON a.id = ra.activity_id"""
+        )
         self.res_alloc_rows = cur2.fetchall()
-        cur2.execute("""
-            SELECT a.name, c.name, aa.driver_amt, aa.allocated_cost
-              FROM activity_allocations aa
-              JOIN activities   a ON a.id = aa.activity_id
-              JOIN cost_objects c ON c.id = aa.cost_object_id
-        """)
+        cur2.execute(
+            """SELECT a.business_procces || ' X ' || a.activity AS act_name,
+                      c.product || ' X ' || c.business_procces AS obj_name,
+                      aa.driver_amt, aa.allocated_cost
+                 FROM activity_allocations aa
+                 JOIN activities   a ON a.id = aa.activity_id
+                 JOIN cost_objects c ON c.id = aa.cost_object_id"""
+        )
         self.act_alloc_rows = cur2.fetchall()
         con2.close()
         self.tree_res_alloc.reloadData()
@@ -434,7 +463,7 @@ class AllocationPage(NSObject):
             con = database.get_connection()
             cur = con.cursor()
             cur.execute(
-                "SELECT id, cost_object_nm FROM driver_values WHERE driver_id=?", (driver_id,))
+                "SELECT id, product FROM driver_values WHERE driver_id=?", (driver_id,))
             vals = [f"{row[0]}: {row[1]}" for row in cur.fetchall()]
             con.close()
             self.driver_val_cb.removeAllItems()
@@ -452,6 +481,18 @@ class AllocationPage(NSObject):
             return int(value.split(":")[0]) if value else None
         except Exception:
             return None
+
+    def parse_activity_name(self, text: str):
+        if "X" not in text:
+            return None, None
+        bproc, act = text.split("X", 1)
+        return bproc.strip(), act.strip()
+
+    def parse_costobj_name(self, text: str):
+        if "X" not in text:
+            return None, None
+        prod, bproc = text.split("X", 1)
+        return prod.strip(), bproc.strip()
 
     def __showError__(self, msg: str):
         alert = NSAlert.alloc().init()

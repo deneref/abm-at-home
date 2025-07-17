@@ -4,7 +4,6 @@ from AppKit import (
     NSWindowStyleMaskTitled, NSWindowStyleMaskClosable, NSWindowStyleMaskResizable,
     NSWindowStyleMaskMiniaturizable, NSBackingStoreBuffered,
     NSViewWidthSizable, NSViewHeightSizable,
-    NSViewMinYMargin, NSViewMaxXMargin,
     NSOpenPanel, NSSavePanel, NSAlert
 )
 from ui.resources_page import ResourcesPage
@@ -15,6 +14,7 @@ from ui.analysis_page import AnalysisPage
 from ui.visualization_page import VisualizationPage
 from ui.drivers_page import DriversPage
 from ui.graph_page import GraphPage
+from ui.produced_amounts_window import ProducedAmountsWindow
 import database
 
 
@@ -64,8 +64,11 @@ class MainWindow(NSObject):
             "Import...", "importExcel:", "")
         export_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Export...", "exportExcel:", "")
+        prod_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Configure Produced Amounts", "openProdAmounts:", "")
         file_menu.addItem_(import_item)
         file_menu.addItem_(export_item)
+        file_menu.addItem_(prod_item)
         file_item.setSubmenu_(file_menu)
 
         NSApp().setMainMenu_(main_menu)
@@ -131,66 +134,14 @@ class MainWindow(NSObject):
         graph_item.setView_(self.graphPage.view)
         self.tab_view.addTabViewItem_(graph_item)
 
-        # ---------- Лейбл и комбобокс «Месяц» в левом-верхнем углу ----------
-        # Размеры контролов и отступы
-        label_w, label_h = 30, 17
-        combo_w, combo_h = 150, 25
-        padding_x, padding_top = 10, 5
-
-        # Вычисляем y-координаты относительно левого-верхнего угла окна
-        label_y = rect.size.height - label_h - padding_top
-        combo_y = rect.size.height - combo_h - padding_top
-
-        # Лейбл
-        period_label = objc.lookUpClass(
-            "NSTextField").labelWithString_(" ")
-        period_label.setFrame_(NSMakeRect(
-            padding_x, label_y, label_w, label_h))
-        period_label.setAutoresizingMask_(
-            NSViewMinYMargin | NSViewMaxXMargin)  # фиксируем левый/верх
-        content_view.addSubview_(period_label)
-
-        # Комбо-бокс
-        self.period_cb = objc.lookUpClass("NSComboBox").alloc().initWithFrame_(
-            NSMakeRect(padding_x + label_w + 8, combo_y, combo_w, combo_h)
-        )
-        self.period_cb.setEditable_(False)
-        self.period_cb.setAutoresizingMask_(
-            NSViewMinYMargin | NSViewMaxXMargin)
-        content_view.addSubview_(self.period_cb)
-
-        # ---------- Заполняем список месяцев ----------
-        months = [
-            "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-            "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
-        ]
-        display_months = [f"{m} 2025" for m in months] + ["Январь 2026"]
-        from datetime import datetime
-
-        current_year = datetime.now().year
-        if current_year == 2025:
-            display_months = display_months[:-1]  # убираем Январь-2026
-
-        self.period_codes = [
-            f"2025-{str(i).zfill(2)}" for i in range(1, 13)] + ["2026-01"]
-        if current_year == 2025:
-            self.period_codes = self.period_codes[:-1]
-
-        self.period_cb.addItemsWithObjectValues_(display_months)
-
-        # Текущий месяц по умолчанию
-        current_code = f"{datetime.now().year}-{str(datetime.now().month).zfill(2)}"
-        index = self.period_codes.index(
-            current_code) if current_code in self.period_codes else 0
-        self.period_cb.selectItemAtIndex_(index)
-
-        # Сохраняем выбранный период в «database»
-        if 0 <= index < len(self.period_codes):
-            database.current_period = self.period_codes[index]
-
-        # Обработчик изменения периода
-        self.period_cb.setTarget_(self)
-        self.period_cb.setAction_("periodChanged:")
+        # ---------- Set default period ----------
+        con = database.get_connection()
+        cur = con.cursor()
+        cur.execute("SELECT period FROM periods ORDER BY period LIMIT 1")
+        row = cur.fetchone()
+        con.close()
+        if row:
+            database.current_period = row[0]
 
         # ---------- Делегаты ----------
         self.window.setDelegate_(self)
@@ -225,22 +176,6 @@ class MainWindow(NSObject):
         if page_obj and hasattr(page_obj, "refresh"):
             page_obj.refresh()
 
-    # ==================== Смена периода ====================
-    def periodChanged_(self, sender):
-        sel_index = self.period_cb.indexOfSelectedItem()
-        if sel_index < 0:
-            return
-        database.current_period = self.period_codes[sel_index]
-
-        # Обновляем страницы, зависящие от периода
-        for page in (
-            self.resourcesPage,
-            self.visualizationPage,
-            self.graphPage,
-            self.analysisPage,
-        ):
-            if hasattr(page, "refresh"):
-                page.refresh()
 
     # ==================== Import/Export ====================
     def importExcel_(self, sender):
@@ -270,6 +205,13 @@ class MainWindow(NSObject):
                 alert.setMessageText_("Error")
                 alert.setInformativeText_(str(exc))
                 alert.runModal()
+
+    def openProdAmounts_(self, sender):
+        if not hasattr(self, "_prodAmtWin") or self._prodAmtWin is None:
+            self._prodAmtWin = ProducedAmountsWindow.alloc().init()
+            self._prodAmtWin.refresh_callback = self.costObjectsPage.refresh
+            self._prodAmtWin.on_close = lambda: setattr(self, "_prodAmtWin", None)
+        self._prodAmtWin.show()
 
     def refresh_all_pages(self):
         for page in (
