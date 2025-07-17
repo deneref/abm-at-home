@@ -61,3 +61,8 @@ def test_product_and_bproc_filter():
     # only activity a1 connected
     assert any(e[0] == 'A1' for e in edges)
     assert all(e[0] != 'A2' for e in edges)
+
+
+def test_business_process_lookup():
+    vals = database.get_business_processes('p1')
+    assert set(vals) == {'b1', 'b2'}

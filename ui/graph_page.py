@@ -58,20 +58,9 @@ class GraphPage(NSObject):
 
     def productChanged_(self, sender):
         prod = sender.stringValue().strip()
-        con = database.get_connection()
-        cur = con.cursor()
-        if prod:
-            cur.execute(
-                "SELECT business_procces FROM cost_objects WHERE product=?",
-                (prod,),
-            )
-            vals = [row[0] for row in cur.fetchall()]
-        else:
-            vals = []
-        con.close()
+        vals = database.get_business_processes(prod) if prod else []
         self.bp_cb.removeAllItems()
-        if vals:
-            self.bp_cb.addItemsWithObjectValues_(vals)
+        self.bp_cb.addItemsWithObjectValues_(vals)
 
     def refresh_products(self):
         con = database.get_connection()
