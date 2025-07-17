@@ -337,6 +337,10 @@ def insert_data():
     if os.path.exists(sample_file):
         try:
             import_from_excel(sample_file)
+            # After loading raw data ensure that all dependent tables are
+            # populated and costs are properly propagated through the model.
+            apply_driver_values()
+            update_activity_costs()
         except Exception as exc:  # pragma: no cover - show error if sample invalid
             print(f"Failed to import {sample_file}: {exc}")
     else:
