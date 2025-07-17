@@ -120,6 +120,7 @@ def init_db():
     con.close()
     apply_driver_values()
     update_activity_costs()
+    update_cost_object_costs()
 
 
 def update_activity_costs() -> None:
@@ -296,7 +297,8 @@ def apply_driver_values(dv_ids: list[int] | None = None) -> None:
             "SELECT id, driver_id, product, value FROM driver_values")
 
     for dv_id, driver_id, product, val in cur.fetchall():
-        cur.execute("SELECT id, business_procces FROM activities WHERE driver_id=?", (driver_id,))
+        cur.execute(
+            "SELECT id, business_procces FROM activities WHERE driver_id=?", (driver_id,))
         act_rows = cur.fetchall()
         for a_id, bproc in act_rows:
             cur.execute(
@@ -393,9 +395,11 @@ def export_to_excel(file_path: str):
     df_activities = pd.DataFrame(
         acts, columns=["id", "business_procces", "activity", "driver", "evenly"])
     # Cost Objects
-    cur.execute("SELECT id, product, business_procces, allocated_cost FROM cost_objects")
+    cur.execute(
+        "SELECT id, product, business_procces, allocated_cost FROM cost_objects")
     cos = cur.fetchall()
-    df_costobj = pd.DataFrame(cos, columns=["id", "product", "business_procces", "allocated_cost"])
+    df_costobj = pd.DataFrame(
+        cos, columns=["id", "product", "business_procces", "allocated_cost"])
     # Drivers
     cur.execute("SELECT id, name FROM drivers")
     dr = cur.fetchall()
@@ -596,7 +600,8 @@ def import_from_excel(file_path: str):
         product = str(row.get("product", "")).strip()
         if not product:
             continue
-        amount = float(row.get("amount", 0)) if pd.notna(row.get("amount")) else 0.0
+        amount = float(row.get("amount", 0)) if pd.notna(
+            row.get("amount")) else 0.0
         cur.execute(
             "INSERT INTO produced_amounts(product, amount) VALUES(?, ?) "
             "ON CONFLICT(product) DO UPDATE SET amount=excluded.amount",
@@ -635,8 +640,10 @@ def import_from_excel(file_path: str):
     # Import Resource Allocations
     for _, row in df_res_alloc.iterrows():
         # Use provided IDs if available; otherwise lookup by name
-        r_id = int(row["resource_id"]) if pd.notna(row["resource_id"]) else None
-        a_id = int(row["activity_id"]) if pd.notna(row["activity_id"]) else None
+        r_id = int(row["resource_id"]) if pd.notna(
+            row["resource_id"]) else None
+        a_id = int(row["activity_id"]) if pd.notna(
+            row["activity_id"]) else None
         r_name = str(row.get("resource_name", "")).strip()
         act_bproc = str(row.get("business_procces", "")).strip()
         act_name = str(row.get("activity", "")).strip()
@@ -670,14 +677,17 @@ def import_from_excel(file_path: str):
 
     # Import Activity Allocations
     for _, row in df_act_alloc.iterrows():
-        a_id = int(row["activity_id"]) if pd.notna(row["activity_id"]) else None
-        c_id = int(row["cost_object_id"]) if pd.notna(row["cost_object_id"]) else None
+        a_id = int(row["activity_id"]) if pd.notna(
+            row["activity_id"]) else None
+        c_id = int(row["cost_object_id"]) if pd.notna(
+            row["cost_object_id"]) else None
         a_bproc = str(row.get("business_procces", "")).strip()
         a_name = str(row.get("activity", "")).strip()
         c_product = str(row.get("product", "")).strip()
         c_bproc = str(row.get("cost_object_bp", "")).strip()
         drv_desc = str(row.get("driver_value", "")).strip()
-        driver_amt = float(row.get("driver_amt", row.get("quantity", 0))) if pd.notna(row.get("driver_amt", row.get("quantity"))) else None
+        driver_amt = float(row.get("driver_amt", row.get("quantity", 0))) if pd.notna(
+            row.get("driver_amt", row.get("quantity"))) else None
 
         # Lookup activity and cost object by name if IDs are missing
         if not a_id and a_bproc and a_name:
