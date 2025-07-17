@@ -1,5 +1,17 @@
 import sqlite3
+
 import pandas as pd
+
+from services.cost_updates import (
+    update_activity_allocation_costs,
+    update_activity_costs,
+    update_cost_object_costs,
+)
+from services.production import (
+    get_all_produced_amounts,
+    get_produced_amount,
+    set_produced_amount,
+)
 
 DB_NAME = "abm_data.db"
 # Default to the first period; can be changed by the UI
@@ -14,6 +26,7 @@ def get_connection():
 
 def init_db():
     import sqlite3
+
     con = get_connection()
     cur = con.cursor()
 
@@ -123,80 +136,6 @@ def init_db():
     update_cost_object_costs()
 
 
-def update_activity_costs() -> None:
-    """Recalculate allocated cost for each activity based on current resource allocations."""
-    con = get_connection()
-    cur = con.cursor()
-    cur.execute(
-        """
-        WITH totals AS (
-            SELECT resource_id, SUM(amount) AS total_amt
-              FROM resource_allocations
-             GROUP BY resource_id
-        )
-        UPDATE activities
-           SET allocated_cost = COALESCE((
-                SELECT SUM(
-                           CASE WHEN totals.total_amt > 0
-                                THEN r.cost_total * ra.amount / totals.total_amt
-                                ELSE 0 END)
-                  FROM resource_allocations ra
-                  JOIN resources r ON r.id = ra.resource_id
-                  JOIN totals ON totals.resource_id = ra.resource_id
-                 WHERE ra.activity_id = activities.id
-           ), 0)
-        """
-    )
-    con.commit()
-    con.close()
-    update_cost_object_costs()
-
-
-def update_activity_allocation_costs() -> None:
-    """Update allocated_cost for each activity allocation based on driver amounts."""
-    con = get_connection()
-    cur = con.cursor()
-    cur.execute(
-        """
-        WITH totals AS (
-            SELECT activity_id, SUM(driver_amt) AS total_amt
-              FROM activity_allocations
-             GROUP BY activity_id
-        )
-        UPDATE activity_allocations AS aa
-           SET allocated_cost = (
-                SELECT CASE WHEN totals.total_amt > 0
-                            THEN a.allocated_cost * aa.driver_amt / totals.total_amt
-                            ELSE 0 END
-                  FROM activities a
-                  JOIN totals ON totals.activity_id = aa.activity_id
-                 WHERE a.id = aa.activity_id
-           )
-        """
-    )
-    con.commit()
-    con.close()
-
-
-def update_cost_object_costs() -> None:
-    """Recalculate allocated cost for each cost object based on activity allocations."""
-    update_activity_allocation_costs()
-    con = get_connection()
-    cur = con.cursor()
-    cur.execute(
-        """
-        UPDATE cost_objects
-           SET allocated_cost = COALESCE((
-                SELECT SUM(aa.allocated_cost)
-                  FROM activity_allocations aa
-                 WHERE aa.cost_object_id = cost_objects.id
-           ), 0)
-        """
-    )
-    con.commit()
-    con.close()
-
-
 def get_resources_with_unallocated(period: str | None = None):
     """Return list of resources with their unallocated cost for the given period."""
     period_code = period if period is not None else current_period
@@ -213,43 +152,8 @@ def get_resources_with_unallocated(period: str | None = None):
            FROM resources r
            LEFT JOIN resource_costs rc
              ON r.id = rc.resource_id AND rc.period=?""",
-        (period_code,)
+        (period_code,),
     )
-    rows = cur.fetchall()
-    con.close()
-    return rows
-
-
-def set_produced_amount(product: str, amount: float) -> None:
-    """Insert or update produced amount for a given product."""
-    con = get_connection()
-    cur = con.cursor()
-    cur.execute(
-        "INSERT INTO produced_amounts(product, amount) VALUES(?, ?) "
-        "ON CONFLICT(product) DO UPDATE SET amount=excluded.amount",
-        (product, amount),
-    )
-    con.commit()
-    con.close()
-
-
-def get_produced_amount(product: str) -> float | None:
-    """Return produced amount for the product if exists."""
-    con = get_connection()
-    cur = con.cursor()
-    cur.execute(
-        "SELECT amount FROM produced_amounts WHERE product=?", (product,)
-    )
-    row = cur.fetchone()
-    con.close()
-    return row[0] if row else None
-
-
-def get_all_produced_amounts():
-    """Return list of (product, amount) for all produced amounts."""
-    con = get_connection()
-    cur = con.cursor()
-    cur.execute("SELECT product, amount FROM produced_amounts")
     rows = cur.fetchall()
     con.close()
     return rows
@@ -306,12 +210,13 @@ def apply_driver_values(dv_ids: list[int] | None = None) -> None:
             dv_ids,
         )
     else:
-        cur.execute(
-            "SELECT id, driver_id, product, value FROM driver_values")
+        cur.execute("SELECT id, driver_id, product, value FROM driver_values")
 
     for dv_id, driver_id, product, val in cur.fetchall():
         cur.execute(
-            "SELECT id, business_procces FROM activities WHERE driver_id=?", (driver_id,))
+            "SELECT id, business_procces FROM activities WHERE driver_id=?",
+            (driver_id,),
+        )
         act_rows = cur.fetchall()
         for a_id, bproc in act_rows:
             cur.execute(
@@ -346,6 +251,7 @@ def apply_driver_values(dv_ids: list[int] | None = None) -> None:
 def insert_data():
     """Load sample data from model.xlsx into the database."""
     import os
+
     sample_file = os.path.join(os.path.dirname(__file__), "model_new.xlsx")
     if os.path.exists(sample_file):
         try:
@@ -380,12 +286,14 @@ def reset_all_tables() -> None:
     cur.execute("PRAGMA foreign_keys = OFF;")
 
     # получаем список всех пользовательских таблиц (служебные sqlite_% исключаем)
-    cur.execute("""
+    cur.execute(
+        """
         SELECT name
           FROM sqlite_master
          WHERE type='table'
            AND name NOT LIKE 'sqlite_%'
-    """)
+    """
+    )
     for (table_name,) in cur.fetchall():
         cur.execute(f'DELETE FROM "{table_name}";')
 
@@ -408,74 +316,99 @@ def export_to_excel(file_path: str):
     # Resources
     cur.execute("SELECT id, name, cost_total, unit FROM resources")
     res = cur.fetchall()
-    df_resources = pd.DataFrame(
-        res, columns=["id", "name", "cost_total", "unit"])
+    df_resources = pd.DataFrame(res, columns=["id", "name", "cost_total", "unit"])
     # Activities (with driver name instead of id for clarity)
-    cur.execute("""SELECT a.id, a.business_procces, a.activity,
+    cur.execute(
+        """SELECT a.id, a.business_procces, a.activity,
                           IFNULL(d.name, '') AS driver,
                           a.evenly
                    FROM activities a
-                   LEFT JOIN drivers d ON a.driver_id = d.id""")
+                   LEFT JOIN drivers d ON a.driver_id = d.id"""
+    )
     acts = cur.fetchall()
     df_activities = pd.DataFrame(
-        acts, columns=["id", "business_procces", "activity", "driver", "evenly"])
+        acts, columns=["id", "business_procces", "activity", "driver", "evenly"]
+    )
     # Cost Objects
     cur.execute(
-        "SELECT id, product, business_procces, allocated_cost FROM cost_objects")
+        "SELECT id, product, business_procces, allocated_cost FROM cost_objects"
+    )
     cos = cur.fetchall()
     df_costobj = pd.DataFrame(
-        cos, columns=["id", "product", "business_procces", "allocated_cost"])
+        cos, columns=["id", "product", "business_procces", "allocated_cost"]
+    )
     # Drivers
     cur.execute("SELECT id, name FROM drivers")
     dr = cur.fetchall()
     df_drivers = pd.DataFrame(dr, columns=["id", "name"])
     # Driver Values (with driver name)
-    cur.execute("""SELECT dv.id, d.name AS driver, dv.product, dv.value
+    cur.execute(
+        """SELECT dv.id, d.name AS driver, dv.product, dv.value
                    FROM driver_values dv
-                   JOIN drivers d ON dv.driver_id = d.id""")
+                   JOIN drivers d ON dv.driver_id = d.id"""
+    )
     dvs = cur.fetchall()
-    df_driver_vals = pd.DataFrame(
-        dvs, columns=["id", "driver", "product", "value"])
+    df_driver_vals = pd.DataFrame(dvs, columns=["id", "driver", "product", "value"])
     # Resource Allocations (with resource and activity names)
-    cur.execute("""SELECT r.id, r.name, a.id, a.business_procces, a.activity, ra.amount
+    cur.execute(
+        """SELECT r.id, r.name, a.id, a.business_procces, a.activity, ra.amount
                    FROM resource_allocations ra
                    JOIN resources r ON ra.resource_id = r.id
-                   JOIN activities a ON ra.activity_id = a.id""")
+                   JOIN activities a ON ra.activity_id = a.id"""
+    )
     ra = cur.fetchall()
-    df_res_alloc = pd.DataFrame(ra, columns=[
-                                "resource_id", "resource_name", "activity_id", "business_procces", "activity", "amount"])
+    df_res_alloc = pd.DataFrame(
+        ra,
+        columns=[
+            "resource_id",
+            "resource_name",
+            "activity_id",
+            "business_procces",
+            "activity",
+            "amount",
+        ],
+    )
     # Activity Allocations (with activity and cost_object names, and driver value name)
-    cur.execute("""SELECT a.id, a.business_procces, a.activity,
+    cur.execute(
+        """SELECT a.id, a.business_procces, a.activity,
                           c.id, c.product, c.business_procces,
                           IFNULL(dv.product, '') AS driver_value,
                           aa.driver_amt, aa.allocated_cost
                    FROM activity_allocations aa
                    JOIN activities a ON aa.activity_id = a.id
                    JOIN cost_objects c ON aa.cost_object_id = c.id
-                   LEFT JOIN driver_values dv ON aa.driver_value_id = dv.id""")
+                   LEFT JOIN driver_values dv ON aa.driver_value_id = dv.id"""
+    )
     aa = cur.fetchall()
-    df_act_alloc = pd.DataFrame(aa, columns=[
-                                "activity_id", "business_procces", "activity",
-                                "cost_object_id", "product", "cost_object_bp",
-                                "driver_value", "driver_amt", "allocated_cost"])
+    df_act_alloc = pd.DataFrame(
+        aa,
+        columns=[
+            "activity_id",
+            "business_procces",
+            "activity",
+            "cost_object_id",
+            "product",
+            "cost_object_bp",
+            "driver_value",
+            "driver_amt",
+            "allocated_cost",
+        ],
+    )
     # Produced amounts
     cur.execute("SELECT product, amount FROM produced_amounts")
     pa = cur.fetchall()
     df_prod_amt = pd.DataFrame(pa, columns=["product", "amount"])
     con.close()
     # Write dataframes to an Excel file
-    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+    with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
         df_resources.to_excel(writer, sheet_name="Resources", index=False)
         df_activities.to_excel(writer, sheet_name="Activities", index=False)
         df_costobj.to_excel(writer, sheet_name="CostObjects", index=False)
         df_drivers.to_excel(writer, sheet_name="Drivers", index=False)
         df_driver_vals.to_excel(writer, sheet_name="DriverValues", index=False)
-        df_res_alloc.to_excel(
-            writer, sheet_name="ResourceAllocations", index=False)
-        df_act_alloc.to_excel(
-            writer, sheet_name="ActivityAllocations", index=False)
-        df_prod_amt.to_excel(
-            writer, sheet_name="ProducedAmounts", index=False)
+        df_res_alloc.to_excel(writer, sheet_name="ResourceAllocations", index=False)
+        df_act_alloc.to_excel(writer, sheet_name="ActivityAllocations", index=False)
+        df_prod_amt.to_excel(writer, sheet_name="ProducedAmounts", index=False)
 
 
 def import_from_excel(file_path: str):
@@ -485,8 +418,15 @@ def import_from_excel(file_path: str):
     Clears current data and populates tables from file. Performs upsert by IDs when possible.
     """
     xls = pd.ExcelFile(file_path)
-    required_sheets = ["Resources", "Activities", "CostObjects", "Drivers",
-                       "DriverValues", "ResourceAllocations", "ActivityAllocations"]
+    required_sheets = [
+        "Resources",
+        "Activities",
+        "CostObjects",
+        "Drivers",
+        "DriverValues",
+        "ResourceAllocations",
+        "ActivityAllocations",
+    ]
     for sheet in required_sheets:
         if sheet not in xls.sheet_names:
             raise ValueError(f"Missing sheet: {sheet} in Excel file")
@@ -509,9 +449,14 @@ def import_from_excel(file_path: str):
     cur.execute("PRAGMA foreign_keys = OFF;")
     tables = [
         "resource_costs",
-        "resource_allocations", "activity_allocations",
-        "resources", "activities", "cost_objects",
-        "drivers", "driver_values", "produced_amounts"
+        "resource_allocations",
+        "activity_allocations",
+        "resources",
+        "activities",
+        "cost_objects",
+        "drivers",
+        "driver_values",
+        "produced_amounts",
     ]
     for t in tables:
         cur.execute(f'DELETE FROM "{t}";')
@@ -527,13 +472,9 @@ def import_from_excel(file_path: str):
         if pd.notna(row.get("id")):
             d_id = int(row["id"])
             cur.execute(
-                "INSERT OR IGNORE INTO drivers(id, name) VALUES(?, ?)",
-                (d_id, name)
+                "INSERT OR IGNORE INTO drivers(id, name) VALUES(?, ?)", (d_id, name)
             )
-            cur.execute(
-                "UPDATE drivers SET name=? WHERE id=?",
-                (name, d_id)
-            )
+            cur.execute("UPDATE drivers SET name=? WHERE id=?", (name, d_id))
         else:
             # Insert without specified ID
             cur.execute("INSERT INTO drivers(name) VALUES(?)", (name,))
@@ -545,22 +486,23 @@ def import_from_excel(file_path: str):
         name = str(row["name"]).strip()
         if not name:
             continue
-        cost_total = float(row["cost_total"]) if pd.notna(
-            row["cost_total"]) else 0.0
+        cost_total = float(row["cost_total"]) if pd.notna(row["cost_total"]) else 0.0
         unit = str(row["unit"]) if pd.notna(row["unit"]) else ""
         if pd.notna(row.get("id")):
             r_id = int(row["id"])
             cur.execute(
                 "INSERT OR IGNORE INTO resources(id, name, cost_total, unit) VALUES(?, ?, ?, ?)",
-                (r_id, name, cost_total, unit)
+                (r_id, name, cost_total, unit),
             )
             cur.execute(
                 "UPDATE resources SET name=?, cost_total=?, unit=? WHERE id=?",
-                (name, cost_total, unit, r_id)
+                (name, cost_total, unit, r_id),
             )
         else:
-            cur.execute("INSERT INTO resources(name, cost_total, unit) VALUES(?, ?, ?)",
-                        (name, cost_total, unit))
+            cur.execute(
+                "INSERT INTO resources(name, cost_total, unit) VALUES(?, ?, ?)",
+                (name, cost_total, unit),
+            )
 
     # Import Activities
     activity_map = {}  # map (business_procces, activity) to id
@@ -577,24 +519,24 @@ def import_from_excel(file_path: str):
             driver_id = driver_map.get(driver_name)
             if driver_id is None:
                 # If driver not in driver sheet, create a new driver
-                cur.execute("INSERT INTO drivers(name) VALUES(?)",
-                            (driver_name,))
+                cur.execute("INSERT INTO drivers(name) VALUES(?)", (driver_name,))
                 driver_id = cur.lastrowid
                 driver_map[driver_name] = driver_id
         if pd.notna(row.get("id")):
             a_id = int(row["id"])
             cur.execute(
                 "INSERT OR IGNORE INTO activities(id, business_procces, activity, driver_id, evenly) VALUES(?, ?, ?, ?, ?)",
-                (a_id, bproc, act_name, driver_id, evenly_flag)
+                (a_id, bproc, act_name, driver_id, evenly_flag),
             )
             cur.execute(
                 "UPDATE activities SET business_procces=?, activity=?, driver_id=?, evenly=? WHERE id=?",
-                (bproc, act_name, driver_id, evenly_flag, a_id)
+                (bproc, act_name, driver_id, evenly_flag, a_id),
             )
         else:
             cur.execute(
                 "INSERT INTO activities(business_procces, activity, driver_id, evenly) VALUES(?, ?, ?, ?)",
-                (bproc, act_name, driver_id, evenly_flag))
+                (bproc, act_name, driver_id, evenly_flag),
+            )
             a_id = cur.lastrowid
         activity_map[(bproc, act_name)] = a_id
 
@@ -609,14 +551,17 @@ def import_from_excel(file_path: str):
             c_id = int(row["id"])
             cur.execute(
                 "INSERT OR IGNORE INTO cost_objects(id, product, business_procces) VALUES(?, ?, ?)",
-                (c_id, product, bproc)
+                (c_id, product, bproc),
             )
             cur.execute(
                 "UPDATE cost_objects SET product=?, business_procces=? WHERE id=?",
-                (product, bproc, c_id))
+                (product, bproc, c_id),
+            )
         else:
-            cur.execute("INSERT INTO cost_objects(product, business_procces) VALUES(?, ?)",
-                        (product, bproc))
+            cur.execute(
+                "INSERT INTO cost_objects(product, business_procces) VALUES(?, ?)",
+                (product, bproc),
+            )
             c_id = cur.lastrowid
         costobj_map[(product, bproc)] = c_id
 
@@ -625,8 +570,7 @@ def import_from_excel(file_path: str):
         product = str(row.get("product", "")).strip()
         if not product:
             continue
-        amount = float(row.get("amount", 0)) if pd.notna(
-            row.get("amount")) else 0.0
+        amount = float(row.get("amount", 0)) if pd.notna(row.get("amount")) else 0.0
         cur.execute(
             "INSERT INTO produced_amounts(product, amount) VALUES(?, ?) "
             "ON CONFLICT(product) DO UPDATE SET amount=excluded.amount",
@@ -650,25 +594,24 @@ def import_from_excel(file_path: str):
             dv_id = int(row["id"])
             cur.execute(
                 "INSERT OR IGNORE INTO driver_values(id, driver_id, product, value) VALUES(?, ?, ?, ?)",
-                (dv_id, d_id, product, value)
+                (dv_id, d_id, product, value),
             )
             cur.execute(
                 "UPDATE driver_values SET driver_id=?, product=?, value=? WHERE id=?",
-                (d_id, product, value, dv_id)
+                (d_id, product, value, dv_id),
             )
         else:
             cur.execute(
                 "INSERT INTO driver_values(driver_id, product, value) VALUES(?, ?, ?)",
-                (d_id, product, value))
+                (d_id, product, value),
+            )
             # No need to store dv_id unless we want mapping for something later
 
     # Import Resource Allocations
     for _, row in df_res_alloc.iterrows():
         # Use provided IDs if available; otherwise lookup by name
-        r_id = int(row["resource_id"]) if pd.notna(
-            row["resource_id"]) else None
-        a_id = int(row["activity_id"]) if pd.notna(
-            row["activity_id"]) else None
+        r_id = int(row["resource_id"]) if pd.notna(row["resource_id"]) else None
+        a_id = int(row["activity_id"]) if pd.notna(row["activity_id"]) else None
         r_name = str(row.get("resource_name", "")).strip()
         act_bproc = str(row.get("business_procces", "")).strip()
         act_name = str(row.get("activity", "")).strip()
@@ -693,26 +636,27 @@ def import_from_excel(file_path: str):
             amount = float(row["amount"]) if pd.notna(row["amount"]) else 0.0
             cur.execute(
                 "INSERT OR IGNORE INTO resource_allocations(resource_id, activity_id, amount) VALUES(?, ?, ?)",
-                (r_id, a_id, amount)
+                (r_id, a_id, amount),
             )
             cur.execute(
                 "UPDATE resource_allocations SET amount=? WHERE resource_id=? AND activity_id=?",
-                (amount, r_id, a_id)
+                (amount, r_id, a_id),
             )
 
     # Import Activity Allocations
     for _, row in df_act_alloc.iterrows():
-        a_id = int(row["activity_id"]) if pd.notna(
-            row["activity_id"]) else None
-        c_id = int(row["cost_object_id"]) if pd.notna(
-            row["cost_object_id"]) else None
+        a_id = int(row["activity_id"]) if pd.notna(row["activity_id"]) else None
+        c_id = int(row["cost_object_id"]) if pd.notna(row["cost_object_id"]) else None
         a_bproc = str(row.get("business_procces", "")).strip()
         a_name = str(row.get("activity", "")).strip()
         c_product = str(row.get("product", "")).strip()
         c_bproc = str(row.get("cost_object_bp", "")).strip()
         drv_desc = str(row.get("driver_value", "")).strip()
-        driver_amt = float(row.get("driver_amt", row.get("quantity", 0))) if pd.notna(
-            row.get("driver_amt", row.get("quantity"))) else None
+        driver_amt = (
+            float(row.get("driver_amt", row.get("quantity", 0)))
+            if pd.notna(row.get("driver_amt", row.get("quantity")))
+            else None
+        )
 
         # Lookup activity and cost object by name if IDs are missing
         if not a_id and a_bproc and a_name:
@@ -743,28 +687,27 @@ def import_from_excel(file_path: str):
         if drv_desc:
             # If a driver value name is provided, find its ID (unique within driver)
             # First, get the activity's driver_id to narrow search
-            cur.execute(
-                "SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
+            cur.execute("SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
             act_info = cur.fetchone()
             act_driver_id = act_info[0] if act_info else None
             act_evenly = act_info[1] if act_info else 0
             if act_driver_id:
-                cur.execute("SELECT id FROM driver_values WHERE driver_id=? AND product=?",
-                            (act_driver_id, drv_desc))
+                cur.execute(
+                    "SELECT id FROM driver_values WHERE driver_id=? AND product=?",
+                    (act_driver_id, drv_desc),
+                )
                 val = cur.fetchone()
                 if val:
                     driver_value_id = val[0]
             if driver_value_id is None:
                 # Try find by name globally if unique
-                cur.execute(
-                    "SELECT id FROM driver_values WHERE product=?", (drv_desc,))
+                cur.execute("SELECT id FROM driver_values WHERE product=?", (drv_desc,))
                 vals = cur.fetchall()
                 if len(vals) == 1:
                     driver_value_id = vals[0][0]
         # Determine driver amount to store
         amt_val = 0.0
-        cur.execute(
-            "SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
+        cur.execute("SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
         a_info = cur.fetchone()
         act_driver = a_info[0] if a_info else None
         act_evenly = a_info[1] if a_info else 0
@@ -773,8 +716,9 @@ def import_from_excel(file_path: str):
             driver_value_id = None  # evenly distribution doesn't use driver values
         elif act_driver and driver_value_id:
             # lookup the actual numeric value for the driver value
-            cur.execute("SELECT value FROM driver_values WHERE id=?",
-                        (driver_value_id,))
+            cur.execute(
+                "SELECT value FROM driver_values WHERE id=?", (driver_value_id,)
+            )
             val = cur.fetchone()
             amt_val = float(val[0]) if val else 0.0
         else:
@@ -783,11 +727,11 @@ def import_from_excel(file_path: str):
 
         cur.execute(
             "INSERT OR IGNORE INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost) VALUES(?, ?, ?, ?, 0)",
-            (a_id, c_id, amt_val, driver_value_id)
+            (a_id, c_id, amt_val, driver_value_id),
         )
         cur.execute(
             "UPDATE activity_allocations SET driver_amt=?, driver_value_id=? WHERE activity_id=? AND cost_object_id=?",
-            (amt_val, driver_value_id, a_id, c_id)
+            (amt_val, driver_value_id, a_id, c_id),
         )
 
     # Regenerate period-specific tables (resource_costs and monthly allocations)
