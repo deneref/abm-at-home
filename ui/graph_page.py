@@ -6,6 +6,7 @@ from AppKit import (
     NSView, NSImageView, NSButton, NSTextField, NSComboBox,
     NSViewWidthSizable, NSViewHeightSizable, NSViewMinYMargin,
 )
+from ui.allocation_page import COMBO_VISIBLE_ITEMS
 import database
 import matplotlib
 matplotlib.use("Agg")
@@ -17,29 +18,35 @@ class GraphPage(NSObject):
         self = objc.super(GraphPage, self).init()
         if self is None:
             return None
-        content_rect = NSMakeRect(0, 0, 1000, 620)
+        content_rect = NSMakeRect(0, 0, 1400, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
         self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
 
         prod_label = NSTextField.labelWithString_("Product")
         prod_label.setFrame_(NSMakeRect(5, 585, 70, 20))
+        prod_label.setAutoresizingMask_(NSViewMinYMargin)
         self.view.addSubview_(prod_label)
 
-        self.product_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(80, 580, 150, 25))
+        self.product_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(80, 580, 450, 25))
         self.product_cb.setEditable_(False)
+        self.product_cb.setNumberOfVisibleItems_(COMBO_VISIBLE_ITEMS)
+        self.product_cb.setAutoresizingMask_(NSViewMinYMargin)
         self.product_cb.setTarget_(self)
         self.product_cb.setAction_("productChanged:")
         self.view.addSubview_(self.product_cb)
 
         bp_label = NSTextField.labelWithString_("Business Process")
-        bp_label.setFrame_(NSMakeRect(235, 585, 120, 20))
+        bp_label.setFrame_(NSMakeRect(540, 585, 120, 20))
+        bp_label.setAutoresizingMask_(NSViewMinYMargin)
         self.view.addSubview_(bp_label)
 
-        self.bp_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(360, 580, 150, 25))
+        self.bp_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(665, 580, 450, 25))
         self.bp_cb.setEditable_(False)
+        self.bp_cb.setNumberOfVisibleItems_(COMBO_VISIBLE_ITEMS)
+        self.bp_cb.setAutoresizingMask_(NSViewMinYMargin)
         self.view.addSubview_(self.bp_cb)
 
-        btn = NSButton.alloc().initWithFrame_(NSMakeRect(520, 578, 120, 30))
+        btn = NSButton.alloc().initWithFrame_(NSMakeRect(1125, 578, 120, 30))
         btn.setTitle_("Show Graph")
         btn.setTarget_(self)
         btn.setAction_("showGraph:")
@@ -132,7 +139,8 @@ class GraphPage(NSObject):
         image = objc.lookUpClass("NSImage").alloc().initWithData_(nsdata) if nsdata else None
         if not image:
             return
-        self.img_view = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, self.view.frame().size.width, 620))
+        height = self.view.frame().size.height - 60
+        self.img_view = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, self.view.frame().size.width, height))
         self.img_view.setImage_(image)
         try:
             from AppKit import NSImageScaleProportionallyUpOrDown
