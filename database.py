@@ -255,6 +255,19 @@ def get_all_produced_amounts():
     return rows
 
 
+def get_business_processes(product: str) -> list[str]:
+    """Return distinct business processes for the given product."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT DISTINCT business_procces FROM cost_objects WHERE product=?",
+        (product,),
+    )
+    vals = [row[0] for row in cur.fetchall()]
+    con.close()
+    return vals
+
+
 def update_even_allocations(activity_id: int, evenly: int) -> None:
     """Create or remove cost object allocations for an activity based on
     its evenly flag."""
@@ -339,6 +352,14 @@ def insert_data():
             import_from_excel(sample_file)
             # After loading raw data ensure that all dependent tables are
             # populated and costs are properly propagated through the model.
+            con = get_connection()
+            cur = con.cursor()
+            cur.execute("SELECT id, evenly FROM activities")
+            activities = cur.fetchall()
+            con.close()
+            for a_id, evenly in activities:
+                if evenly:
+                    update_even_allocations(a_id, evenly)
             apply_driver_values()
             update_activity_costs()
         except Exception as exc:  # pragma: no cover - show error if sample invalid
