@@ -33,6 +33,7 @@ class GraphPage(NSObject):
         self.product_cb.setAutoresizingMask_(NSViewMinYMargin)
         self.product_cb.setTarget_(self)
         self.product_cb.setAction_("productChanged:")
+        self.product_cb.setDelegate_(self)
         self.view.addSubview_(self.product_cb)
 
         bp_label = NSTextField.labelWithString_("Business Process")
@@ -55,6 +56,12 @@ class GraphPage(NSObject):
 
         self.refresh_products()
         return self
+
+    def comboBoxSelectionDidChange_(self, notification):
+        """Ensure business process values refresh when product selection changes."""
+        sender = notification.object()
+        if sender is self.product_cb:
+            self.productChanged_(sender)
 
     def productChanged_(self, sender):
         prod = sender.stringValue().strip()
