@@ -41,7 +41,8 @@ class ProducedAmountsWindow(NSObject):
         content.addSubview_(scroll)
 
         form_rect = NSMakeRect(0, 0, 400, 40)
-        form_view = objc.lookUpClass("NSView").alloc().initWithFrame_(form_rect)
+        form_view = objc.lookUpClass(
+            "NSView").alloc().initWithFrame_(form_rect)
         form_view.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
         amt_label = NSTextField.labelWithString_("Amount")
         amt_label.setFrame_(NSMakeRect(5, 10, 60, 20))
