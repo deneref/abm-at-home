@@ -183,14 +183,24 @@ def update_even_allocations(activity_id: int, evenly: int) -> None:
         (activity_id,),
     )
     if evenly:
-        # Even distribution -> allocate driver_amt=1 to each cost object
-        cur.execute("SELECT id FROM cost_objects")
-        cost_objects = [row[0] for row in cur.fetchall()]
-        for co_id in cost_objects:
+        # Even distribution -> allocate driver_amt=1 to each matching cost object
+        cur.execute(
+            "SELECT business_procces FROM activities WHERE id=?",
+            (activity_id,),
+        )
+        bproc_row = cur.fetchone()
+        bproc = bproc_row[0] if bproc_row else None
+        if bproc is not None:
             cur.execute(
-                "INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost) VALUES (?, ?, 1, NULL, 0)",
-                (activity_id, co_id),
+                "SELECT id FROM cost_objects WHERE business_procces=?",
+                (bproc,),
             )
+            cost_objects = [row[0] for row in cur.fetchall()]
+            for co_id in cost_objects:
+                cur.execute(
+                    "INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost) VALUES (?, ?, 1, NULL, 0)",
+                    (activity_id, co_id),
+                )
     con.commit()
     con.close()
 
