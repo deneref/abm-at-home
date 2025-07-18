@@ -65,10 +65,10 @@ class DriversPage(NSObject):
             NSViewWidthSizable | NSViewMaxYMargin)
         # Label for values section
         self.values_label = NSTextField.labelWithString_("Значения драйвера:")
-        self.values_label.setFrame_(NSMakeRect(5, 280, 400, 20))
+        self.values_label.setFrame_(NSMakeRect(5, 285, 400, 20))
         second_section.addSubview_(self.values_label)
         # Table of driver values
-        table2_rect = NSMakeRect(0, 30, 1000, 250)
+        table2_rect = NSMakeRect(0, 30, 1000, 270)
         self.value_table = NSTableView.alloc().initWithFrame_(table2_rect)
         for col_id, width in [("id", 120), ("product", 300), ("value", 100)]:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
