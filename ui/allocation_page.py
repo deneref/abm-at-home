@@ -103,54 +103,8 @@ class AllocationPage(NSObject):
         second_label.setFrame_(NSMakeRect(5, 290, 400, 20))
         second_section.addSubview_(second_label)
 
-        # ----------- Input panel (Activity → Cost Object) ----------- #
-        sec_act_label = NSTextField.labelWithString_("Активность")
-        sec_act_label.setFrame_(NSMakeRect(5, 260, 80, 20))
-        second_section.addSubview_(sec_act_label)
-
-        self.activity_cb2 = NSComboBox.alloc().initWithFrame_(
-            NSMakeRect(90, 255, 450, 25))  # wider combo box
-        self.__tuneCombo__(self.activity_cb2)
-        second_section.addSubview_(self.activity_cb2)
-
-        obj_label = NSTextField.labelWithString_("Объект")
-        obj_label.setFrame_(NSMakeRect(550, 260, 60, 20))
-        second_section.addSubview_(obj_label)
-
-        self.costobj_cb = NSComboBox.alloc().initWithFrame_(
-            NSMakeRect(615, 255, 250, 25))  # wider combo box (double width)
-        self.__tuneCombo__(self.costobj_cb)
-        second_section.addSubview_(self.costobj_cb)
-
-        # desc_label = NSTextField.labelWithString_("Описание")
-        # desc_label.setFrame_(NSMakeRect(875, 260, 60, 20))
-        # second_section.addSubview_(desc_label)
-
-        self.driver_val_cb = NSComboBox.alloc().initWithFrame_(
-            # wider combo box (for driver values)
-            NSMakeRect(945, 255, 195, 25))
-        self.__tuneCombo__(self.driver_val_cb)
-        self.driver_val_cb.setEditable_(False)
-        self.driver_val_cb.setEnabled_(False)
-        second_section.addSubview_(self.driver_val_cb)
-
-        # qty_label = NSTextField.labelWithString_("Объем")
-        # qty_label.setFrame_(NSMakeRect(1150, 260, 50, 20))
-        # second_section.addSubview_(qty_label)
-
-        self.quantity_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(1210, 255, 80, 25))
-        second_section.addSubview_(self.quantity_field)
-
-        add_btn2 = NSButton.alloc().initWithFrame_(NSMakeRect(1300, 250, 100, 30))
-        add_btn2.setTitle_("Add / Update")
-        add_btn2.setTarget_(self)
-        add_btn2.setAction_("saveActAlloc:")
-        add_btn2.setAutoresizingMask_(NSViewMinXMargin)
-        second_section.addSubview_(add_btn2)
-
         # Table for Activity→CostObject allocations
-        tree2_rect = NSMakeRect(0, 40, 1400, 180)
+        tree2_rect = NSMakeRect(0, 40, 1400, 240)
         self.tree_act_alloc = NSTableView.alloc().initWithFrame_(tree2_rect)
         for col_id, col_label in [("activity", "Активность"), ("cost_object", "Объект"), ("driver_amt", "Driver Amt"), ("allocated_cost", "Стоимость")]:
             col = NSTableColumn.alloc().initWithIdentifier_(col_id)
@@ -189,9 +143,6 @@ class AllocationPage(NSObject):
         if combo is getattr(self, 'resource_cb', None):
             combo.setTarget_(self)
             combo.setAction_("resourceSelectionChanged:")
-        elif combo is getattr(self, 'activity_cb2', None):
-            combo.setTarget_(self)
-            combo.setAction_("activitySelectionChanged:")
 
     # --------------- TableView Data Source ---------------- #
     def numberOfRowsInTableView_(self, tableView):
@@ -300,65 +251,6 @@ class AllocationPage(NSObject):
         con.close()
 
     # ---------------- Handlers (Section 2) ---------------- #
-    def saveActAlloc_(self, sender):
-        a_id = self.parse_id(self.activity_cb2.stringValue())
-        c_id = self.parse_id(self.costobj_cb.stringValue())
-        if not a_id or not c_id:
-            self.__showError__("Выберите активность и объект")
-            return
-        driver_val_id = None
-        amt = None
-
-        con = database.get_connection()
-        cur = con.cursor()
-        # Get the selected activity's driver and evenly settings
-        cur.execute(
-            "SELECT driver_id, evenly FROM activities WHERE id=?", (a_id,))
-        act_driver_id, act_evenly = (cur.fetchone() or (None, 0))
-        if act_evenly == 1:                       # Evenly distribute
-            qty = 1.0
-        elif act_driver_id is not None:          # Distribute by driver
-            driver_val_id = self.parse_id(self.driver_val_cb.stringValue())
-            if not driver_val_id:
-                con.close()
-                self.__showError__("Выберите значение драйвера")
-                return
-            cur.execute(
-                "SELECT value FROM driver_values WHERE id=?", (driver_val_id,))
-            amt = (cur.fetchone() or (None,))[0]
-            if amt is None:
-                con.close()
-                self.__showError__("Invalid driver value")
-                return
-        else:                                    # Manual quantity input
-            try:
-                amt = float(self.quantity_field.stringValue())
-            except ValueError:
-                con.close()
-                self.__showError__("Invalid quantity")
-                return
-
-        # Check if allocation already exists
-        cur2 = con.cursor()
-        cur2.execute(
-            "SELECT 1 FROM activity_allocations WHERE activity_id=? AND cost_object_id=?", (a_id, c_id))
-        exists = cur2.fetchone()
-        if exists:  # update existing allocation
-            cur2.execute("""
-                UPDATE activity_allocations
-                   SET driver_amt=?, driver_value_id=?
-                 WHERE activity_id=? AND cost_object_id=?
-            """, (amt, driver_val_id, a_id, c_id))
-        else:       # add new allocation
-            cur2.execute("""
-                INSERT INTO activity_allocations(activity_id, cost_object_id, driver_amt, driver_value_id, allocated_cost)
-                VALUES(?,?,?,?,0)
-            """, (a_id, c_id, amt, driver_val_id))
-        con.commit()
-        con.close()
-        database.update_cost_object_costs()
-        self.refresh()
-
     def deleteActAlloc_(self, sender):
         sel = self.tree_act_alloc.selectedRow()
         if sel is None or sel < 0:
@@ -415,11 +307,6 @@ class AllocationPage(NSObject):
         self.resource_cb.addItemsWithObjectValues_(res_list)
         self.activity_cb.removeAllItems()
         self.activity_cb.addItemsWithObjectValues_(acts_list)
-        self.activity_cb2.removeAllItems()
-        self.activity_cb2.addItemsWithObjectValues_(acts_list)
-        self.costobj_cb.removeAllItems()
-        self.costobj_cb.addItemsWithObjectValues_(objs_list)
-
         # Refresh tables
         con2 = database.get_connection()
         cur2 = con2.cursor()
@@ -448,32 +335,6 @@ class AllocationPage(NSObject):
         # If a resource is already selected, update the remaining cost display
         if self.parse_id(self.resource_cb.stringValue()):
             self.resourceSelectionChanged_(self.resource_cb)
-
-    def activitySelectionChanged_(self, sender):
-        """Adjusts the driver-value dropdown and quantity field based on the selected activity's driver/evenly settings."""
-        a_id = self.parse_id(sender.stringValue())
-        if not a_id:
-            return
-        driver_id, evenly = self.activities_info.get(a_id, (None, 0))
-        if evenly == 1:   # Evenly distribution
-            self.driver_val_cb.removeAllItems()
-            self.driver_val_cb.setEnabled_(False)
-            self.quantity_field.setEnabled_(False)
-        elif driver_id is not None:  # Has a driver -> list its values
-            con = database.get_connection()
-            cur = con.cursor()
-            cur.execute(
-                "SELECT id, product FROM driver_values WHERE driver_id=?", (driver_id,))
-            vals = [f"{row[0]}: {row[1]}" for row in cur.fetchall()]
-            con.close()
-            self.driver_val_cb.removeAllItems()
-            self.driver_val_cb.addItemsWithObjectValues_(vals)
-            self.driver_val_cb.setEnabled_(True)
-            self.quantity_field.setEnabled_(False)
-        else:  # No driver, manual quantity
-            self.driver_val_cb.removeAllItems()
-            self.driver_val_cb.setEnabled_(False)
-            self.quantity_field.setEnabled_(True)
 
     def parse_id(self, value):
         """Utility to parse the ID (integer before the colon) from a combo box string value."""
