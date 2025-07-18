@@ -52,15 +52,18 @@ def teardown_module(module):
 def test_evenly_allocations_created():
     con = database.get_connection()
     cur = con.cursor()
-    cur.execute("SELECT driver_amt FROM activity_allocations ORDER BY cost_object_id")
-    rows = [r[0] for r in cur.fetchall()]
+    cur.execute(
+        "SELECT cost_object_id, driver_amt FROM activity_allocations ORDER BY cost_object_id"
+    )
+    rows = cur.fetchall()
     cur.execute("SELECT allocated_cost FROM activities WHERE id=1")
     act_cost = cur.fetchone()[0]
     cur.execute("SELECT allocated_cost FROM cost_objects ORDER BY id")
     co_costs = [r[0] for r in cur.fetchall()]
     con.close()
-    assert rows == [1, 1]
+    # Only cost objects matching the activity's business process should be allocated
+    assert rows == [(1, 1)]
     assert act_cost == 80
-    assert co_costs[0] == pytest.approx(40)
-    assert co_costs[1] == pytest.approx(40)
+    assert co_costs[0] == pytest.approx(80)
+    assert co_costs[1] == pytest.approx(0)
 
