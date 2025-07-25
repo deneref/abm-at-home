@@ -97,6 +97,14 @@ def init_db():
         amount REAL NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS sales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        product TEXT NOT NULL,
+        cost_amt REAL NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS periods (
         period TEXT PRIMARY KEY
     );
@@ -170,6 +178,16 @@ def get_business_processes(product: str) -> list[str]:
     vals = [row[0] for row in cur.fetchall()]
     con.close()
     return vals
+
+
+def get_sales():
+    """Return all sales records."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute("SELECT id, date, channel, product, cost_amt FROM sales ORDER BY date")
+    rows = cur.fetchall()
+    con.close()
+    return rows
 
 
 def update_even_allocations(activity_id: int, evenly: int) -> None:
@@ -318,7 +336,7 @@ def reset_all_tables() -> None:
 def export_to_excel(file_path: str):
     """
     Export all model data to an Excel file with multiple sheets.
-    Sheets: Resources, Activities, CostObjects, Drivers, DriverValues, ResourceAllocations, ActivityAllocations, ProducedAmounts (optional).
+    Sheets: Resources, Activities, CostObjects, Drivers, DriverValues, ResourceAllocations, ActivityAllocations, ProducedAmounts (optional), Sales (optional).
     """
     con = get_connection()
     cur = con.cursor()
@@ -408,6 +426,12 @@ def export_to_excel(file_path: str):
     cur.execute("SELECT product, amount FROM produced_amounts")
     pa = cur.fetchall()
     df_prod_amt = pd.DataFrame(pa, columns=["product", "amount"])
+    # Sales
+    cur.execute("SELECT id, date, channel, product, cost_amt FROM sales")
+    sa = cur.fetchall()
+    df_sales = pd.DataFrame(
+        sa, columns=["id", "date", "channel", "product", "cost_amt"]
+    )
     con.close()
     # Write dataframes to an Excel file
     with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
@@ -419,12 +443,13 @@ def export_to_excel(file_path: str):
         df_res_alloc.to_excel(writer, sheet_name="ResourceAllocations", index=False)
         df_act_alloc.to_excel(writer, sheet_name="ActivityAllocations", index=False)
         df_prod_amt.to_excel(writer, sheet_name="ProducedAmounts", index=False)
+        df_sales.to_excel(writer, sheet_name="Sales", index=False)
 
 
 def import_from_excel(file_path: str):
     """
     Import model data from an Excel file.
-    Expects sheets: Resources, Activities, CostObjects, Drivers, DriverValues, ResourceAllocations, ActivityAllocations.
+    Expects sheets: Resources, Activities, CostObjects, Drivers, DriverValues, ResourceAllocations, ActivityAllocations. Optional: ProducedAmounts, Sales.
     Clears current data and populates tables from file. Performs upsert by IDs when possible.
     """
     xls = pd.ExcelFile(file_path)
@@ -453,6 +478,11 @@ def import_from_excel(file_path: str):
     else:
         df_prod_amt = pd.DataFrame(columns=["product", "amount"])
 
+    if "Sales" in xls.sheet_names:
+        df_sales = pd.read_excel(xls, "Sales")
+    else:
+        df_sales = pd.DataFrame(columns=["date", "channel", "product", "cost_amt"])
+
     con = get_connection()
     cur = con.cursor()
     # Clear existing data (like reset_all_tables)
@@ -467,6 +497,7 @@ def import_from_excel(file_path: str):
         "drivers",
         "driver_values",
         "produced_amounts",
+        "sales",
     ]
     for t in tables:
         cur.execute(f'DELETE FROM "{t}";')
@@ -586,6 +617,32 @@ def import_from_excel(file_path: str):
             "ON CONFLICT(product) DO UPDATE SET amount=excluded.amount",
             (product, amount),
         )
+
+    # Import Sales
+    for _, row in df_sales.iterrows():
+        s_date = str(row.get("date", "")).strip()
+        channel = str(row.get("channel", "")).strip()
+        product = str(row.get("product", "")).strip()
+        if not s_date or not channel or not product:
+            continue
+        cost_amt = (
+            float(row.get("cost_amt", 0)) if pd.notna(row.get("cost_amt")) else 0.0
+        )
+        if pd.notna(row.get("id")):
+            s_id = int(row["id"])
+            cur.execute(
+                "INSERT OR IGNORE INTO sales(id, date, channel, product, cost_amt) VALUES(?, ?, ?, ?, ?)",
+                (s_id, s_date, channel, product, cost_amt),
+            )
+            cur.execute(
+                "UPDATE sales SET date=?, channel=?, product=?, cost_amt=? WHERE id=?",
+                (s_date, channel, product, cost_amt, s_id),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO sales(date, channel, product, cost_amt) VALUES(?, ?, ?, ?)",
+                (s_date, channel, product, cost_amt),
+            )
 
     # Import Driver Values
     for _, row in df_driver_vals.iterrows():
