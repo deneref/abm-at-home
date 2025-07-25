@@ -1,10 +1,26 @@
 import objc
-from Cocoa import NSObject, NSApplication, NSApp, NSWindow, NSTabView, NSTabViewItem, NSMakeRect, NSMenu, NSMenuItem
+from Cocoa import (
+    NSObject,
+    NSApplication,
+    NSApp,
+    NSWindow,
+    NSTabView,
+    NSTabViewItem,
+    NSMakeRect,
+    NSMenu,
+    NSMenuItem,
+)
 from AppKit import (
-    NSWindowStyleMaskTitled, NSWindowStyleMaskClosable, NSWindowStyleMaskResizable,
-    NSWindowStyleMaskMiniaturizable, NSBackingStoreBuffered,
-    NSViewWidthSizable, NSViewHeightSizable,
-    NSOpenPanel, NSSavePanel, NSAlert
+    NSWindowStyleMaskTitled,
+    NSWindowStyleMaskClosable,
+    NSWindowStyleMaskResizable,
+    NSWindowStyleMaskMiniaturizable,
+    NSBackingStoreBuffered,
+    NSViewWidthSizable,
+    NSViewHeightSizable,
+    NSOpenPanel,
+    NSSavePanel,
+    NSAlert,
 )
 from ui.resources_page import ResourcesPage
 from ui.activities_page import ActivitiesPage
@@ -15,6 +31,7 @@ from ui.visualization_page import VisualizationPage
 from ui.drivers_page import DriversPage
 from ui.graph_page import GraphPage
 from ui.produced_amounts_window import ProducedAmountsWindow
+from ui.sales_page import SalesPage
 import database
 
 
@@ -28,9 +45,9 @@ class MainWindow(NSObject):
         app = NSApplication.sharedApplication()
         try:
             import AppKit
+
             if hasattr(AppKit, "NSApplicationActivationPolicyRegular"):
-                app.setActivationPolicy_(
-                    AppKit.NSApplicationActivationPolicyRegular)
+                app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
         except Exception:
             pass
 
@@ -53,7 +70,8 @@ class MainWindow(NSObject):
         main_menu.addItem_(app_item)
         app_menu = NSMenu.alloc().initWithTitle_("Application")
         quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Quit", "terminate:", "q")
+            "Quit", "terminate:", "q"
+        )
         app_menu.addItem_(quit_item)
         app_item.setSubmenu_(app_menu)
 
@@ -61,11 +79,14 @@ class MainWindow(NSObject):
         main_menu.addItem_(file_item)
         file_menu = NSMenu.alloc().initWithTitle_("File")
         import_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Import...", "importExcel:", "")
+            "Import...", "importExcel:", ""
+        )
         export_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Export...", "exportExcel:", "")
+            "Export...", "exportExcel:", ""
+        )
         prod_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Configure Produced Amounts", "openProdAmounts:", "")
+            "Configure Produced Amounts", "openProdAmounts:", ""
+        )
         file_menu.addItem_(import_item)
         file_menu.addItem_(export_item)
         file_menu.addItem_(prod_item)
@@ -75,14 +96,12 @@ class MainWindow(NSObject):
 
         # Контейнер для выпадающего списка и вкладок
         content_view = objc.lookUpClass("NSView").alloc().initWithFrame_(rect)
-        content_view.setAutoresizingMask_(
-            NSViewWidthSizable | NSViewHeightSizable)
+        content_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         self.window.setContentView_(content_view)
 
         # TabView на всё окно
         self.tab_view = NSTabView.alloc().initWithFrame_(rect)
-        self.tab_view.setAutoresizingMask_(
-            NSViewWidthSizable | NSViewHeightSizable)
+        self.tab_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         content_view.addSubview_(self.tab_view)
 
         # ---------- Страницы и вкладки ----------
@@ -109,6 +128,12 @@ class MainWindow(NSObject):
         costobj_item.setLabel_("Объекты затрат")
         costobj_item.setView_(self.costObjectsPage.view)
         self.tab_view.addTabViewItem_(costobj_item)
+
+        self.salesPage = SalesPage.alloc().init()
+        sales_item = NSTabViewItem.alloc().initWithIdentifier_("sales")
+        sales_item.setLabel_("Sales")
+        sales_item.setView_(self.salesPage.view)
+        self.tab_view.addTabViewItem_(sales_item)
 
         self.allocationPage = AllocationPage.alloc().init()
         allocation_item = NSTabViewItem.alloc().initWithIdentifier_("allocation")
@@ -156,6 +181,7 @@ class MainWindow(NSObject):
         app = NSApplication.sharedApplication()
         app.activateIgnoringOtherApps_(True)
         import PyObjCTools.AppHelper as AppHelper
+
         AppHelper.runEventLoop()
 
     def windowWillClose_(self, notification):
@@ -168,6 +194,7 @@ class MainWindow(NSObject):
             "activities": self.activitiesPage,
             "drivers": self.driversPage,
             "cost_objects": self.costObjectsPage,
+            "sales": self.salesPage,
             "allocation": self.allocationPage,
             "analysis": self.analysisPage,
             "visualization": self.visualizationPage,
@@ -176,12 +203,10 @@ class MainWindow(NSObject):
         if page_obj and hasattr(page_obj, "refresh"):
             page_obj.refresh()
 
-
     # ==================== Import/Export ====================
     def importExcel_(self, sender):
         panel = NSOpenPanel.openPanel()
-        panel.setAllowedFileTypes_(
-            ["xlsx"])
+        panel.setAllowedFileTypes_(["xlsx"])
         if panel.runModal():
             file_path = str(panel.URL().path())
             try:
@@ -219,6 +244,7 @@ class MainWindow(NSObject):
             self.activitiesPage,
             self.driversPage,
             self.costObjectsPage,
+            self.salesPage,
             self.allocationPage,
             self.analysisPage,
             self.visualizationPage,
@@ -226,4 +252,3 @@ class MainWindow(NSObject):
         ):
             if hasattr(page, "refresh"):
                 page.refresh()
-
