@@ -26,8 +26,7 @@ from ui.resources_page import ResourcesPage
 from ui.activities_page import ActivitiesPage
 from ui.cost_objects_page import CostObjectsPage
 from ui.allocation_page import AllocationPage
-from ui.analysis_page import AnalysisPage
-from ui.visualization_page import VisualizationPage
+from ui.pnl_page import PNLPage
 from ui.drivers_page import DriversPage
 from ui.graph_page import GraphPage
 from ui.produced_amounts_window import ProducedAmountsWindow
@@ -141,17 +140,11 @@ class MainWindow(NSObject):
         allocation_item.setView_(self.allocationPage.view)
         self.tab_view.addTabViewItem_(allocation_item)
 
-        self.analysisPage = AnalysisPage.alloc().init()
-        analysis_item = NSTabViewItem.alloc().initWithIdentifier_("analysis")
-        analysis_item.setLabel_("Анализ")
-        analysis_item.setView_(self.analysisPage.view)
-        self.tab_view.addTabViewItem_(analysis_item)
-
-        self.visualizationPage = VisualizationPage.alloc().init()
-        viz_item = NSTabViewItem.alloc().initWithIdentifier_("visualization")
-        viz_item.setLabel_("Визуализация")
-        viz_item.setView_(self.visualizationPage.view)
-        self.tab_view.addTabViewItem_(viz_item)
+        self.pnlPage = PNLPage.alloc().init()
+        pnl_item = NSTabViewItem.alloc().initWithIdentifier_("pnl")
+        pnl_item.setLabel_("PNL")
+        pnl_item.setView_(self.pnlPage.view)
+        self.tab_view.addTabViewItem_(pnl_item)
 
         self.graphPage = GraphPage.alloc().init()
         graph_item = NSTabViewItem.alloc().initWithIdentifier_("graph")
@@ -196,8 +189,7 @@ class MainWindow(NSObject):
             "cost_objects": self.costObjectsPage,
             "sales": self.salesPage,
             "allocation": self.allocationPage,
-            "analysis": self.analysisPage,
-            "visualization": self.visualizationPage,
+            "pnl": self.pnlPage,
             "graph": self.graphPage,
         }.get(identifier)
         if page_obj and hasattr(page_obj, "refresh"):
@@ -246,8 +238,7 @@ class MainWindow(NSObject):
             self.costObjectsPage,
             self.salesPage,
             self.allocationPage,
-            self.analysisPage,
-            self.visualizationPage,
+            self.pnlPage,
             self.graphPage,
         ):
             if hasattr(page, "refresh"):
