@@ -23,24 +23,28 @@ class PNLPage(NSObject):
         self = objc.super(PNLPage, self).init()
         if self is None:
             return None
-        content_rect = NSMakeRect(0, 0, 1000, 620)
+        # allow the graphs to stretch across the entire window
+        content_rect = NSMakeRect(0, 0, 1400, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
         self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
 
         label = NSTextField.labelWithString_("Product")
-        label.setFrame_(NSMakeRect(5, 585, 70, 20))
+        # give enough space so the combo box doesn't overlap
+        label.setFrame_(NSMakeRect(10, 585, 80, 20))
         label.setAutoresizingMask_(NSViewMinYMargin)
         self.view.addSubview_(label)
 
-        self.product_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(80, 580, 300, 25))
+        # wider combo for better visibility
+        self.product_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(100, 580, 450, 25))
         self.product_cb.setEditable_(False)
         self.product_cb.setNumberOfVisibleItems_(COMBO_VISIBLE_ITEMS)
         self.product_cb.setTarget_(self)
         self.product_cb.setAction_("productChanged:")
+        self.product_cb.setDelegate_(self)
         self.product_cb.setAutoresizingMask_(NSViewMinYMargin)
         self.view.addSubview_(self.product_cb)
 
-        first_rect = NSMakeRect(0, 310, 1000, 310)
+        first_rect = NSMakeRect(0, 310, 1400, 310)
         self.first_section = NSView.alloc().initWithFrame_(first_rect)
         self.first_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
         title1 = NSTextField.labelWithString_("Cost by Business Process")
@@ -48,7 +52,7 @@ class PNLPage(NSObject):
         self.first_section.addSubview_(title1)
         self.view.addSubview_(self.first_section)
 
-        second_rect = NSMakeRect(0, 0, 1000, 310)
+        second_rect = NSMakeRect(0, 0, 1400, 310)
         self.second_section = NSView.alloc().initWithFrame_(second_rect)
         self.second_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
         title2 = NSTextField.labelWithString_("Revenue vs Cost")
@@ -70,6 +74,12 @@ class PNLPage(NSObject):
         if products:
             self.product_cb.selectItemAtIndex_(0)
         self.draw_charts()
+
+    def comboBoxSelectionDidChange_(self, notification):
+        """Trigger redraw when product is changed via dropdown."""
+        sender = notification.object()
+        if sender is self.product_cb:
+            self.productChanged_(sender)
 
     def productChanged_(self, sender):
         self.draw_charts()
