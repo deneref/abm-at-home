@@ -39,8 +39,7 @@ class PNLPage(NSObject):
         self.product_cb = NSComboBox.alloc().initWithFrame_(NSMakeRect(100, 580, 450, 25))
         self.product_cb.setEditable_(False)
         self.product_cb.setNumberOfVisibleItems_(COMBO_VISIBLE_ITEMS)
-        self.product_cb.setTarget_(self)
-        self.product_cb.setAction_("productChanged:")
+        # trigger redraw only after the new value is committed via the delegate
         self.product_cb.setDelegate_(self)
         self.product_cb.setAutoresizingMask_(NSViewMinYMargin)
         self.view.addSubview_(self.product_cb)
