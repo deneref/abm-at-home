@@ -190,6 +190,18 @@ def get_sales():
     return rows
 
 
+def get_revenue_and_cost(product: str) -> tuple[float, float]:
+    """Return total revenue and total cost for a product."""
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute("SELECT SUM(cost_amt) FROM sales WHERE product=?", (product,))
+    revenue = cur.fetchone()[0] or 0.0
+    cur.execute("SELECT SUM(allocated_cost) FROM cost_objects WHERE product=?", (product,))
+    cost = cur.fetchone()[0] or 0.0
+    con.close()
+    return revenue, cost
+
+
 def update_even_allocations(activity_id: int, evenly: int) -> None:
     """Create or remove cost object allocations for an activity based on
     its evenly flag."""
