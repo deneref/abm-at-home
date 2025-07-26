@@ -1,3 +1,5 @@
+from ui.allocation_page import COMBO_VISIBLE_ITEMS
+import database
 import objc
 from Cocoa import NSObject, NSMakeRect, NSData
 from AppKit import (
@@ -14,8 +16,6 @@ import io
 from matplotlib.figure import Figure
 import matplotlib
 matplotlib.use("Agg")
-import database
-from ui.allocation_page import COMBO_VISIBLE_ITEMS
 
 
 class PNLPage(NSObject):
@@ -26,7 +26,8 @@ class PNLPage(NSObject):
         # allow the graphs to stretch across the entire window
         content_rect = NSMakeRect(0, 0, 1400, 620)
         self.view = NSView.alloc().initWithFrame_(content_rect)
-        self.view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.view.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewHeightSizable)
 
         label = NSTextField.labelWithString_("Product")
         # give enough space so the combo box doesn't overlap
@@ -46,15 +47,14 @@ class PNLPage(NSObject):
 
         first_rect = NSMakeRect(0, 310, 1400, 310)
         self.first_section = NSView.alloc().initWithFrame_(first_rect)
-        self.first_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
-        title1 = NSTextField.labelWithString_("Cost by Business Process")
-        title1.setFrame_(NSMakeRect(5, 280, 300, 20))
-        self.first_section.addSubview_(title1)
+        self.first_section.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewMinYMargin)
         self.view.addSubview_(self.first_section)
 
         second_rect = NSMakeRect(0, 0, 1400, 310)
         self.second_section = NSView.alloc().initWithFrame_(second_rect)
-        self.second_section.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
+        self.second_section.setAutoresizingMask_(
+            NSViewWidthSizable | NSViewMaxYMargin)
         title2 = NSTextField.labelWithString_("Revenue vs Cost")
         title2.setFrame_(NSMakeRect(5, 280, 200, 20))
         self.second_section.addSubview_(title2)
@@ -101,14 +101,15 @@ class PNLPage(NSObject):
             (prod,),
         )
         rows = cur.fetchall()
-        cur.execute("SELECT SUM(allocated_cost) FROM cost_objects WHERE product=?", (prod,))
+        cur.execute(
+            "SELECT SUM(allocated_cost) FROM cost_objects WHERE product=?", (prod,))
         total_cost = cur.fetchone()[0] or 0
         cur.execute("SELECT SUM(cost_amt) FROM sales WHERE product=?", (prod,))
         total_rev = cur.fetchone()[0] or 0
         con.close()
         labels = [r[0] for r in rows]
         values = [r[1] for r in rows]
-        fig1 = Figure(figsize=(4, 3), dpi=100)
+        fig1 = Figure(figsize=(16, 3), dpi=100)
         ax1 = fig1.add_subplot(111)
         if values:
             ax1.barh(labels, values, color="#6699cc")
@@ -118,34 +119,41 @@ class PNLPage(NSObject):
         fig1.savefig(buf1, format="png")
         img_data1 = buf1.getvalue()
         nsdata1 = NSData.dataWithBytes_length_(img_data1, len(img_data1))
-        image1 = objc.lookUpClass("NSImage").alloc().initWithData_(nsdata1) if nsdata1 else None
+        image1 = objc.lookUpClass("NSImage").alloc(
+        ).initWithData_(nsdata1) if nsdata1 else None
         if image1:
-            self.img_view1 = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, self.first_section.frame().size.width, 260))
+            self.img_view1 = NSImageView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, self.first_section.frame().size.width, 260))
             self.img_view1.setImage_(image1)
             try:
                 from AppKit import NSImageScaleProportionallyUpOrDown
-                self.img_view1.setImageScaling_(NSImageScaleProportionallyUpOrDown)
+                self.img_view1.setImageScaling_(
+                    NSImageScaleProportionallyUpOrDown)
             except Exception:
                 pass
             self.img_view1.setAutoresizingMask_(NSViewWidthSizable)
             self.first_section.addSubview_(self.img_view1)
 
-        fig2 = Figure(figsize=(4, 3), dpi=100)
+        fig2 = Figure(figsize=(16, 3), dpi=100)
         ax2 = fig2.add_subplot(111)
-        ax2.barh(["Revenue", "Cost"], [total_rev, total_cost], color=["#66cc66", "#cc6666"])
+        ax2.barh(["Revenue", "Cost"], [total_rev, total_cost],
+                 color=["#66cc66", "#cc6666"])
         ax2.set_xlabel("Amount")
         buf2 = io.BytesIO()
         fig2.tight_layout()
         fig2.savefig(buf2, format="png")
         img_data2 = buf2.getvalue()
         nsdata2 = NSData.dataWithBytes_length_(img_data2, len(img_data2))
-        image2 = objc.lookUpClass("NSImage").alloc().initWithData_(nsdata2) if nsdata2 else None
+        image2 = objc.lookUpClass("NSImage").alloc(
+        ).initWithData_(nsdata2) if nsdata2 else None
         if image2:
-            self.img_view2 = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, self.second_section.frame().size.width, 260))
+            self.img_view2 = NSImageView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, self.second_section.frame().size.width, 260))
             self.img_view2.setImage_(image2)
             try:
                 from AppKit import NSImageScaleProportionallyUpOrDown
-                self.img_view2.setImageScaling_(NSImageScaleProportionallyUpOrDown)
+                self.img_view2.setImageScaling_(
+                    NSImageScaleProportionallyUpOrDown)
             except Exception:
                 pass
             self.img_view2.setAutoresizingMask_(NSViewWidthSizable)
