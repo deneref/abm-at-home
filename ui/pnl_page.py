@@ -101,12 +101,8 @@ class PNLPage(NSObject):
             (prod,),
         )
         rows = cur.fetchall()
-        cur.execute(
-            "SELECT SUM(allocated_cost) FROM cost_objects WHERE product=?", (prod,))
-        total_cost = cur.fetchone()[0] or 0
-        cur.execute("SELECT SUM(cost_amt) FROM sales WHERE product=?", (prod,))
-        total_rev = cur.fetchone()[0] or 0
         con.close()
+        total_rev, total_cost = database.get_revenue_and_cost(prod)
         labels = [r[0] for r in rows]
         values = [r[1] for r in rows]
         fig1 = Figure(figsize=(16, 3), dpi=100)
