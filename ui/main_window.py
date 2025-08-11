@@ -31,6 +31,9 @@ from ui.drivers_page import DriversPage
 from ui.graph_page import GraphPage
 from ui.produced_amounts_window import ProducedAmountsWindow
 from ui.sales_page import SalesPage
+from ui.yandex_market_config_window import YandexMarketConfigWindow
+from ui.yandex_product_mapping_window import YandexProductMappingWindow
+from ui.yandex_market_sales_window import YandexMarketSalesWindow
 import database
 
 
@@ -90,6 +93,23 @@ class MainWindow(NSObject):
         file_menu.addItem_(export_item)
         file_menu.addItem_(prod_item)
         file_item.setSubmenu_(file_menu)
+
+        yandex_item = NSMenuItem.alloc().init()
+        main_menu.addItem_(yandex_item)
+        yandex_menu = NSMenu.alloc().initWithTitle_("Yandex Market Extension")
+        ym_conf = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Configure Yandex Market Extension", "openYandexConfig:", ""
+        )
+        ym_map = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Configure Yandex Market Product Names", "openYandexMapping:", ""
+        )
+        ym_sales = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Yandex Market Sales", "openYandexSales:", ""
+        )
+        yandex_menu.addItem_(ym_conf)
+        yandex_menu.addItem_(ym_map)
+        yandex_menu.addItem_(ym_sales)
+        yandex_item.setSubmenu_(yandex_menu)
 
         NSApp().setMainMenu_(main_menu)
 
@@ -229,6 +249,21 @@ class MainWindow(NSObject):
             self._prodAmtWin.refresh_callback = self.costObjectsPage.refresh
             self._prodAmtWin.on_close = lambda: setattr(self, "_prodAmtWin", None)
         self._prodAmtWin.show()
+
+    def openYandexConfig_(self, sender):
+        if not hasattr(self, "_ymConfWin") or self._ymConfWin is None:
+            self._ymConfWin = YandexMarketConfigWindow.alloc().init()
+        self._ymConfWin.show()
+
+    def openYandexMapping_(self, sender):
+        if not hasattr(self, "_ymMapWin") or self._ymMapWin is None:
+            self._ymMapWin = YandexProductMappingWindow.alloc().init()
+        self._ymMapWin.show()
+
+    def openYandexSales_(self, sender):
+        if not hasattr(self, "_ymSalesWin") or self._ymSalesWin is None:
+            self._ymSalesWin = YandexMarketSalesWindow.alloc().init()
+        self._ymSalesWin.show()
 
     def refresh_all_pages(self):
         for page in (
