@@ -85,7 +85,7 @@ def build_graph_data(product: str, bproc: str | None = None):
         data = resource_data.get(r_id)
         if data and data["cost"] is not None:
             node_labels[f"R{r_id}"] = f"R: {data['name']}\n{data['cost']:.2f}"
-            node_colors[f"R{r_id}"] = "#FF6666"
+            node_colors[f"R{r_id}"] = "#FF6667"
 
     for a_id in keep_activities:
         name = all_activities.get(a_id, str(a_id))

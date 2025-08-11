@@ -18,8 +18,13 @@ class ActivitiesPage(NSObject):
         table_rect = NSMakeRect(0, 30, 1000, 590)
         self.tree = objc.lookUpClass(
             "NSTableView").alloc().initWithFrame_(table_rect)
-        columns = [("id", 120), ("name", 150), ("driver", 150),
-                   ("allocated_cost", 120)]
+        columns = [
+            ("id", 120),
+            ("name", 150),
+            ("driver", 150),
+            ("allocated_cost", 120),
+            ("driver_rate", 120),
+        ]
         for col_id, width in columns:
             col = objc.lookUpClass(
                 "NSTableColumn").alloc().initWithIdentifier_(col_id)
@@ -99,6 +104,9 @@ class ActivitiesPage(NSObject):
             return self.rows[rowIndex][2]
         elif col_id == "allocated_cost":
             return str(self.rows[rowIndex][4])
+        elif col_id == "driver_rate":
+            val = self.rows[rowIndex][6]
+            return f"{val:.2f}" if val is not None else "\u2014"
         return ""
 
     def tableViewSelectionDidChange_(self, notification):
@@ -109,7 +117,7 @@ class ActivitiesPage(NSObject):
         if row < 0 or row >= len(self.rows):
             return
         selected = self.rows[row]
-        # selected structure: (id, name, driver_name, evenly_flag, allocated_cost, driver_id)
+        # selected structure: (id, name, driver_name, evenly_flag, allocated_cost, driver_id, driver_rate)
         self.name_field.setStringValue_(selected[1])
         if selected[3] == 1:  # evenly
             self.evenly_cb.setState_(1)
@@ -227,7 +235,17 @@ class ActivitiesPage(NSObject):
                  FROM activities a
                  LEFT JOIN drivers d ON a.driver_id = d.id"""
         )
-        self.rows = cur.fetchall()
+        act_rows = cur.fetchall()
+        # Calculate total driver values per activity
+        cur.execute(
+            "SELECT activity_id, SUM(driver_amt) FROM activity_allocations GROUP BY activity_id"
+        )
+        totals = {row[0]: row[1] for row in cur.fetchall()}
+        self.rows = []
+        for rid, name, drv, evenly, cost, drv_id in act_rows:
+            total = totals.get(rid)
+            rate = cost / total if total and total != 0 else None
+            self.rows.append((rid, name, drv, evenly, cost, drv_id, rate))
         # Populate driver list for combo box
         cur.execute("SELECT id, name FROM drivers")
         drivers = [f"{d[0]}: {d[1]}" for d in cur.fetchall()]
