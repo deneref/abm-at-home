@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Tuple
 
 import requests
 
-ACCESS_TOKEN_PATH = "secrest/yandex_key.txt"
+ACCESS_TOKEN_PATH = "secrets/yandex_key.txt"
 
 
 class YandexMarketClient:
